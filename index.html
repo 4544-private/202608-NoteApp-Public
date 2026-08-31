@@ -2,7 +2,7 @@
 <html lang="ja" data-theme="notebook">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
 <title>memo → git</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
@@ -40,13 +40,15 @@
   }
   ::selection { background: var(--b3); }
   .reset-btn { appearance: none; background: transparent; border: 0; padding: 0; margin: 0; }
+  /* dvh shrinks automatically when the on-screen keyboard opens, unlike vh */
+  .app-h { height: 100vh; height: 100dvh; }
 </style>
 </head>
-<body class="bg-base-100 text-base-content font-sans min-h-screen flex flex-col items-center">
+<body class="app-h bg-base-100 text-base-content font-sans flex flex-col items-center overflow-hidden">
 
-<div class="w-full max-w-xl px-4 pb-16 flex flex-col min-h-screen">
+<div class="app-h w-full max-w-xl px-4 flex flex-col min-h-0">
 
-  <div class="navbar min-h-0 px-0 py-4 border-b border-base-300">
+  <div class="navbar min-h-0 px-0 py-4 border-b border-base-300 shrink-0">
     <div class="flex-1">
       <span class="font-mono text-sm font-semibold tracking-wide">
         <span class="text-primary">&gt;</span> <span id="headerTitle">memo</span>
@@ -58,8 +60,8 @@
   </div>
 
   <!-- ===== list screen ===== -->
-  <div id="listScreen" style="display:none;" class="flex flex-col flex-1">
-    <div class="sticky top-0 z-10 bg-base-100/95 backdrop-blur border-b border-base-300 py-4">
+  <div id="listScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
+    <div class="shrink-0 bg-base-100 border-b border-base-300 py-4">
       <textarea id="newMemoInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[76px]" placeholder="今、思ったことを。" autofocus></textarea>
       <div class="flex justify-end mt-2">
         <button id="newMemoBtn" class="btn btn-neutral btn-sm">記録する</button>
@@ -68,21 +70,21 @@
       <div id="listStatusBar" class="text-xs font-mono mt-1 hidden"></div>
     </div>
 
-    <div id="threadList" class="flex-1">
+    <div id="threadList" class="flex-1 min-h-0 overflow-y-auto overscroll-contain">
       <div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。</div>
     </div>
   </div>
 
   <!-- ===== detail screen ===== -->
-  <div id="detailScreen" style="display:none;" class="flex flex-col flex-1">
-    <div class="sticky top-0 z-10 bg-base-100/95 backdrop-blur border-b border-base-300 flex items-center gap-3 py-4">
+  <div id="detailScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
+    <div class="shrink-0 bg-base-100 border-b border-base-300 flex items-center gap-3 py-4">
       <button id="backBtn" class="btn btn-ghost btn-xs font-mono">← 一覧</button>
       <span id="detailTitle" class="text-[11px] font-mono text-base-content/40"></span>
     </div>
 
-    <div id="detailEntries" class="flex-1 divide-y divide-base-300 py-1"></div>
+    <div id="detailEntries" class="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-base-300 py-1"></div>
 
-    <div class="sticky bottom-0 z-10 bg-base-100/95 backdrop-blur border-t border-base-300 py-3 mt-2">
+    <div class="shrink-0 bg-base-100 border-t border-base-300 py-3">
       <textarea id="replyInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[64px]" placeholder="この件について追記する…"></textarea>
       <div class="flex justify-end mt-2">
         <button id="replyBtn" class="btn btn-neutral btn-sm">追記する</button>
@@ -92,7 +94,7 @@
   </div>
 
   <!-- ===== settings screen ===== -->
-  <div id="settingsScreen" style="display:none;" class="max-w-md w-full mx-auto pt-10">
+  <div id="settingsScreen" style="display:none;" class="max-w-md w-full mx-auto pt-10 flex-1 min-h-0 overflow-y-auto">
     <h2 class="font-mono text-base font-semibold mb-1">接続設定</h2>
     <p class="text-sm text-base-content/60 leading-relaxed mb-6">
       メモは GitHub の private リポジトリにファイルとしてコミットされます。
@@ -404,6 +406,7 @@
           </div>
         </div>`;
     }).join('');
+    container.scrollTop = container.scrollHeight;
   }
 
   // ---------- navigation ----------
@@ -604,6 +607,13 @@
     document.getElementById('replyBtn').addEventListener('click', submitReply);
     document.getElementById('replyInput').addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitReply();
+    });
+    document.getElementById('replyInput').addEventListener('focus', () => {
+      // give the keyboard a moment to open / dvh to settle, then reveal the latest entry
+      setTimeout(() => {
+        const container = document.getElementById('detailEntries');
+        container.scrollTop = container.scrollHeight;
+      }, 150);
     });
 
     if (!config || !config.owner || !config.repo || !config.pat) {
