@@ -1,424 +1,124 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-theme="notebook">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>memo → git</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+          sans: ['"IBM Plex Sans JP"', 'system-ui', 'sans-serif'],
+        }
+      }
+    }
+  }
+</script>
 <style>
-  :root {
-    --paper: #EDEAE3;
-    --surface: #FFFFFF;
-    --ink: #1B1B18;
-    --ink-muted: #6B675E;
-    --ink-faint: #A8A296;
-    --accent: #2F5D50;
-    --accent-soft: #E1EAE6;
-    --line: #D8D3C7;
-    --stamp-red: #8C3B2E;
-    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
-    --font-sans: 'IBM Plex Sans JP', system-ui, sans-serif;
+  /* Custom daisyUI theme: warm paper + ink, evokes a physical notebook/receipt log */
+  [data-theme="notebook"] {
+    color-scheme: light;
+    --p: #2F5D50;   --pc: #F5F3EE;   /* primary: deep ink-stamp teal */
+    --s: #8C3B2E;   --sc: #F5F3EE;   /* secondary: stamp red */
+    --a: #B08D57;   --ac: #201A12;   /* accent: aged brass */
+    --n: #1B1B18;   --nc: #EDEAE3;   /* neutral: ink */
+    --b1: #EDEAE3;  --b2: #E3DFD5;  --b3: #D8D3C7;  --bc: #1B1B18; /* paper base */
+    --in: #4A6FA5;  --inc: #F5F3EE;
+    --su: #3E7A5A;  --suc: #F5F3EE;
+    --wa: #B08D57;  --wac: #201A12;
+    --er: #8C3B2E;  --erc: #F5F3EE;
+    --rounded-box: 0.3rem;
+    --rounded-btn: 0.25rem;
+    --rounded-badge: 0.25rem;
+    --tab-radius: 0.25rem;
   }
-
-  * { box-sizing: border-box; }
-
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: var(--paper);
-    color: var(--ink);
-    font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
-  }
-
-  body {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .shell {
-    width: 100%;
-    max-width: 640px;
-    padding: 0 16px 64px;
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
-  }
-
-  /* ---------- header ---------- */
-  header {
-    padding: 20px 0 12px;
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--line);
-  }
-
-  header h1 {
-    font-family: var(--font-mono);
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    margin: 0;
-    color: var(--ink);
-  }
-
-  header h1::before {
-    content: "> ";
-    color: var(--accent);
-  }
-
-  .settings-link {
-    font-size: 12px;
-    color: var(--ink-muted);
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-family: var(--font-sans);
-    padding: 4px;
-  }
-  .settings-link:hover { color: var(--ink); }
-
-  /* ---------- capture box (shared by list / detail) ---------- */
-  .capture {
-    position: sticky;
-    top: 0;
-    background: var(--paper);
-    padding: 16px 0 14px;
-    z-index: 10;
-    border-bottom: 1px solid var(--line);
-  }
-
-  textarea.memo-input {
-    width: 100%;
-    min-height: 76px;
-    resize: vertical;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    color: var(--ink);
-    font-family: var(--font-mono);
-    font-size: 14.5px;
-    line-height: 1.6;
-    padding: 12px 14px;
-    outline: none;
-  }
-  textarea.memo-input:focus {
-    border-color: var(--accent);
-  }
-  textarea.memo-input::placeholder {
-    color: var(--ink-faint);
-  }
-
-  .capture-row {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 8px;
-  }
-
-  button.record-btn {
-    background: var(--ink);
-    color: var(--paper);
-    border: none;
-    font-family: var(--font-sans);
-    font-size: 13px;
-    font-weight: 500;
-    padding: 8px 18px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  button.record-btn:hover { background: var(--accent); }
-  button.record-btn:disabled {
-    background: var(--ink-faint);
-    cursor: default;
-  }
-
-  .hint {
-    font-size: 11px;
-    color: var(--ink-faint);
-    margin-top: 6px;
-    font-family: var(--font-mono);
-  }
-
-  /* ---------- status ---------- */
-  .status-bar {
-    display: none;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    padding: 8px 0 0;
-  }
-  .status-bar.show { display: block; }
-  .status-bar.ok { color: var(--accent); }
-  .status-bar.err { color: var(--stamp-red); }
-
-  /* ---------- thread list (list screen) ---------- */
-  .thread-list {
-    flex: 1;
-    padding-top: 4px;
-  }
-
-  .empty-state {
-    color: var(--ink-faint);
-    font-family: var(--font-mono);
-    font-size: 13px;
-    padding: 40px 0;
-    text-align: center;
-    line-height: 1.8;
-  }
-
-  .thread-row {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    padding: 14px 2px;
-    border-bottom: 1px solid var(--line);
-    cursor: pointer;
-    background: none;
-    width: 100%;
-    text-align: left;
-    font: inherit;
-  }
-  .thread-row:hover .preview { color: var(--accent); }
-
-  .thread-row .preview {
-    flex: 1;
-    min-width: 0;
-    font-size: 14.5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .thread-row .row-meta {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--ink-faint);
-  }
-
-  .thread-row .count-badge {
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    padding: 1px 6px;
-    line-height: 1.5;
-  }
-
-  /* ---------- detail screen (thread history) ---------- */
-  .detail-header {
-    position: sticky;
-    top: 0;
-    background: var(--paper);
-    z-index: 11;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 16px 0 10px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .back-btn {
-    background: none;
-    border: none;
-    color: var(--ink-muted);
-    font-family: var(--font-mono);
-    font-size: 13px;
-    cursor: pointer;
-    padding: 4px 4px 4px 0;
-  }
-  .back-btn:hover { color: var(--accent); }
-
-  .detail-title {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--ink-faint);
-  }
-
-  .detail-entries {
-    padding-top: 8px;
-    margin-bottom: 8px;
-  }
-
-  .entry {
-    display: flex;
-    gap: 12px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .entry .timestamp {
-    flex-shrink: 0;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--ink-faint);
-    padding-top: 2px;
-    min-width: 44px;
-  }
-
-  .entry .body {
-    flex: 1;
-    font-size: 14.5px;
-    line-height: 1.7;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .entry .loc-meta {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    color: var(--ink-faint);
-    margin-top: 4px;
-  }
-
-  /* ---------- settings screen ---------- */
-  .settings-screen {
-    padding-top: 40px;
-  }
-  .settings-screen h2 {
-    font-family: var(--font-mono);
-    font-size: 15px;
-    margin: 0 0 4px;
-  }
-  .settings-screen p.desc {
-    color: var(--ink-muted);
-    font-size: 13px;
-    line-height: 1.7;
-    margin: 0 0 24px;
-  }
-  .field {
-    margin-bottom: 16px;
-  }
-  .field label {
-    display: block;
-    font-size: 12px;
-    color: var(--ink-muted);
-    margin-bottom: 6px;
-    font-family: var(--font-mono);
-  }
-  .field input {
-    width: 100%;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    color: var(--ink);
-    font-family: var(--font-mono);
-    font-size: 13.5px;
-    padding: 9px 10px;
-    outline: none;
-  }
-  .field input:focus { border-color: var(--accent); }
-  .field .note {
-    font-size: 11px;
-    color: var(--ink-faint);
-    margin-top: 5px;
-    line-height: 1.5;
-  }
-  .settings-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 24px;
-  }
-  button.primary {
-    background: var(--ink);
-    color: var(--paper);
-    border: none;
-    font-family: var(--font-sans);
-    font-size: 13px;
-    font-weight: 500;
-    padding: 9px 20px;
-    cursor: pointer;
-  }
-  button.primary:hover { background: var(--accent); }
-  button.secondary {
-    background: none;
-    border: 1px solid var(--line);
-    color: var(--ink-muted);
-    font-family: var(--font-sans);
-    font-size: 13px;
-    padding: 9px 16px;
-    cursor: pointer;
-  }
-  button.secondary:hover { color: var(--ink); border-color: var(--ink); }
-
-  ::selection { background: var(--accent-soft); }
+  ::selection { background: var(--b3); }
+  .reset-btn { appearance: none; background: transparent; border: 0; padding: 0; margin: 0; }
 </style>
 </head>
-<body>
+<body class="bg-base-100 text-base-content font-sans min-h-screen flex flex-col items-center">
 
-<div class="shell">
-  <header>
-    <h1 id="headerTitle">memo</h1>
-    <button class="settings-link" id="openSettings">設定</button>
-  </header>
+<div class="w-full max-w-xl px-4 pb-16 flex flex-col min-h-screen">
 
-  <!-- ===== list screen (thread previews, LINE-like) ===== -->
-  <div id="listScreen" style="display:none;">
-    <div class="capture">
-      <textarea id="newMemoInput" class="memo-input" placeholder="今、思ったことを。" autofocus></textarea>
-      <div class="capture-row">
-        <button class="record-btn" id="newMemoBtn">記録する</button>
-      </div>
-      <div class="hint" id="locationHint"></div>
-      <div class="status-bar" id="listStatusBar"></div>
+  <div class="navbar min-h-0 px-0 py-4 border-b border-base-300">
+    <div class="flex-1">
+      <span class="font-mono text-sm font-semibold tracking-wide">
+        <span class="text-primary">&gt;</span> <span id="headerTitle">memo</span>
+      </span>
     </div>
-
-    <div class="thread-list" id="threadList">
-      <div class="empty-state">まだメモがありません。</div>
+    <div class="flex-none">
+      <button id="openSettings" class="btn btn-ghost btn-xs font-sans font-normal text-base-content/60">設定</button>
     </div>
   </div>
 
-  <!-- ===== detail screen (single thread history) ===== -->
-  <div id="detailScreen" style="display:none;">
-    <div class="detail-header">
-      <button class="back-btn" id="backBtn">← 一覧</button>
-      <span class="detail-title" id="detailTitle"></span>
+  <!-- ===== list screen ===== -->
+  <div id="listScreen" style="display:none;" class="flex flex-col flex-1">
+    <div class="sticky top-0 z-10 bg-base-100/95 backdrop-blur border-b border-base-300 py-4">
+      <textarea id="newMemoInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[76px]" placeholder="今、思ったことを。" autofocus></textarea>
+      <div class="flex justify-end mt-2">
+        <button id="newMemoBtn" class="btn btn-neutral btn-sm">記録する</button>
+      </div>
+      <div id="locationHint" class="text-[11px] font-mono text-base-content/40 mt-1"></div>
+      <div id="listStatusBar" class="text-xs font-mono mt-1 hidden"></div>
     </div>
 
-    <div class="detail-entries" id="detailEntries"></div>
+    <div id="threadList" class="flex-1">
+      <div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。</div>
+    </div>
+  </div>
 
-    <div class="capture">
-      <textarea id="replyInput" class="memo-input" placeholder="この件について追記する…"></textarea>
-      <div class="capture-row">
-        <button class="record-btn" id="replyBtn">追記する</button>
+  <!-- ===== detail screen ===== -->
+  <div id="detailScreen" style="display:none;" class="flex flex-col flex-1">
+    <div class="sticky top-0 z-10 bg-base-100/95 backdrop-blur border-b border-base-300 flex items-center gap-3 py-4">
+      <button id="backBtn" class="btn btn-ghost btn-xs font-mono">← 一覧</button>
+      <span id="detailTitle" class="text-[11px] font-mono text-base-content/40"></span>
+    </div>
+
+    <div id="detailEntries" class="flex-1 divide-y divide-base-300 py-1"></div>
+
+    <div class="sticky bottom-0 z-10 bg-base-100/95 backdrop-blur border-t border-base-300 py-3 mt-2">
+      <textarea id="replyInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[64px]" placeholder="この件について追記する…"></textarea>
+      <div class="flex justify-end mt-2">
+        <button id="replyBtn" class="btn btn-neutral btn-sm">追記する</button>
       </div>
-      <div class="status-bar" id="detailStatusBar"></div>
+      <div id="detailStatusBar" class="text-xs font-mono mt-1 hidden"></div>
     </div>
   </div>
 
   <!-- ===== settings screen ===== -->
-  <div id="settingsScreen" class="settings-screen" style="display:none;">
-    <h2>接続設定</h2>
-    <p class="desc">
+  <div id="settingsScreen" style="display:none;" class="max-w-md w-full mx-auto pt-10">
+    <h2 class="font-mono text-base font-semibold mb-1">接続設定</h2>
+    <p class="text-sm text-base-content/60 leading-relaxed mb-6">
       メモは GitHub の private リポジトリにファイルとしてコミットされます。
       Fine-grained Personal Access Token を、対象リポジトリ・Contents 権限(Read and write)のみに絞って発行してください。
       トークンはこのブラウザの localStorage にのみ保存されます。
     </p>
-    <div class="field">
-      <label for="inputOwner">リポジトリ所有者(ユーザー名)</label>
-      <input id="inputOwner" type="text" placeholder="例: yourname" autocomplete="off">
+    <div class="form-control mb-4">
+      <label class="label pb-1"><span class="label-text font-mono text-xs text-base-content/60">リポジトリ所有者(ユーザー名)</span></label>
+      <input id="inputOwner" type="text" placeholder="例: yourname" autocomplete="off" class="input input-bordered font-mono text-sm">
     </div>
-    <div class="field">
-      <label for="inputRepo">リポジトリ名</label>
-      <input id="inputRepo" type="text" placeholder="例: my-memos" autocomplete="off">
+    <div class="form-control mb-4">
+      <label class="label pb-1"><span class="label-text font-mono text-xs text-base-content/60">リポジトリ名</span></label>
+      <input id="inputRepo" type="text" placeholder="例: my-memos" autocomplete="off" class="input input-bordered font-mono text-sm">
     </div>
-    <div class="field">
-      <label for="inputPat">Personal Access Token</label>
-      <input id="inputPat" type="password" placeholder="github_pat_xxxxxxxx" autocomplete="off">
-      <div class="note">Fine-grained token / 対象リポジトリのみ / Contents: Read and write</div>
+    <div class="form-control mb-2">
+      <label class="label pb-1"><span class="label-text font-mono text-xs text-base-content/60">Personal Access Token</span></label>
+      <input id="inputPat" type="password" placeholder="github_pat_xxxxxxxx" autocomplete="off" class="input input-bordered font-mono text-sm">
+      <label class="label pt-1"><span class="label-text-alt text-base-content/40 leading-relaxed">Fine-grained token / 対象リポジトリのみ / Contents: Read and write</span></label>
     </div>
-    <div class="settings-actions">
-      <button class="primary" id="saveSettings">保存して接続</button>
-      <button class="secondary" id="cancelSettings" style="display:none;">キャンセル</button>
+    <div class="flex gap-2 mt-6">
+      <button id="saveSettings" class="btn btn-neutral btn-sm">保存して接続</button>
+      <button id="cancelSettings" style="display:none;" class="btn btn-ghost btn-sm">キャンセル</button>
     </div>
-    <div id="settingsStatus" style="display:none;" class="hint"></div>
+    <div id="settingsStatus" style="display:none;" class="text-xs font-mono mt-3"></div>
   </div>
+
 </div>
 
 <script>
@@ -477,10 +177,6 @@
     return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  function firstLine(text) {
-    return text.replace(/\s+/g, ' ').trim();
-  }
-
   function escapeHtml(s) {
     const div = document.createElement('div');
     div.textContent = s;
@@ -496,6 +192,25 @@
   }
   function saveConfig(c) {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
+  }
+
+  // ---------- local memo cache (keyed by repo, keyed by file path -> {sha, ...memo}) ----------
+  function cacheKey() {
+    return `memoapp_cache::${config.owner}::${config.repo}`;
+  }
+  function loadCache() {
+    try {
+      const raw = localStorage.getItem(cacheKey());
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+  }
+  function saveCache(cache) {
+    try { localStorage.setItem(cacheKey(), JSON.stringify(cache)); } catch (e) { /* storage full: ignore, cache is best-effort */ }
+  }
+  function putCacheEntry(path, sha, memo) {
+    const cache = loadCache();
+    cache[path] = { sha, id: memo.id, thread_id: memo.thread_id, parent_id: memo.parent_id, created_at: memo.created_at, location: memo.location, body: memo.body };
+    saveCache(cache);
   }
 
   // ---------- GitHub API ----------
@@ -614,9 +329,10 @@
     const el = document.getElementById(elId);
     if (!el) return;
     el.textContent = msg;
-    el.className = `status-bar show ${kind}`;
+    const colorClass = kind === 'err' ? 'text-error' : kind === 'ok' ? 'text-success' : 'text-base-content/50';
+    el.className = `text-xs font-mono mt-1 ${colorClass}`;
     if (kind === 'ok') {
-      setTimeout(() => { el.className = 'status-bar'; }, 2500);
+      setTimeout(() => { el.classList.add('hidden'); }, 2500);
     }
   }
 
@@ -646,19 +362,23 @@
   function renderThreadList() {
     const container = document.getElementById('threadList');
     if (memos.length === 0) {
-      container.innerHTML = '<div class="empty-state">まだメモがありません。<br>上の欄に書いて「記録する」を押してください。</div>';
+      container.innerHTML = '<div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。<br>上の欄に書いて「記録する」を押してください。</div>';
       return;
     }
     const threads = buildThreads();
     container.innerHTML = threads.map(t => {
       const root = t.entries[0];
-      const preview = firstLine(root.body);
       const count = t.entries.length;
-      const badge = count > 1 ? `<span class="count-badge">${count}件</span>` : '';
+      const badge = count > 1
+        ? `<span class="badge badge-primary badge-sm font-mono">${count}件</span>`
+        : '';
       return `
-        <button class="thread-row" data-tid="${escapeHtml(t.tid)}">
-          <span class="preview">${escapeHtml(preview)}</span>
-          <span class="row-meta">${badge}<span>${relativeTime(t.latest)}</span></span>
+        <button class="reset-btn thread-row w-full text-left flex items-start gap-3 py-4 border-b border-base-300 hover:bg-base-200/60 transition-colors" data-tid="${escapeHtml(t.tid)}">
+          <p class="flex-1 min-w-0 text-sm leading-relaxed line-clamp-3 whitespace-pre-line">${escapeHtml(root.body)}</p>
+          <span class="flex flex-col items-end gap-1 flex-shrink-0 pt-0.5">
+            ${badge}
+            <span class="text-[11px] font-mono text-base-content/40">${relativeTime(t.latest)}</span>
+          </span>
         </button>`;
     }).join('');
 
@@ -674,12 +394,12 @@
     document.getElementById('detailTitle').textContent = `${thread.entries.length}件 / 最初のメモ: ${relativeTime(thread.entries[0].created_at)}`;
     const container = document.getElementById('detailEntries');
     container.innerHTML = thread.entries.map(m => {
-      const loc = m.location ? `<div class="loc-meta">${escapeHtml(m.location.lat)}, ${escapeHtml(m.location.lng)}</div>` : '';
+      const loc = m.location ? `<div class="text-[10px] font-mono text-base-content/40 mt-1">${escapeHtml(m.location.lat)}, ${escapeHtml(m.location.lng)}</div>` : '';
       return `
-        <div class="entry">
-          <div class="timestamp">${relativeTime(m.created_at)}</div>
-          <div>
-            <div class="body">${escapeHtml(m.body)}</div>
+        <div class="flex gap-3 py-3">
+          <div class="text-[11px] font-mono text-base-content/40 min-w-[44px] pt-0.5">${relativeTime(m.created_at)}</div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(m.body)}</div>
             ${loc}
           </div>
         </div>`;
@@ -691,7 +411,7 @@
     currentThreadId = null;
     document.getElementById('detailScreen').style.display = 'none';
     document.getElementById('settingsScreen').style.display = 'none';
-    document.getElementById('listScreen').style.display = 'block';
+    document.getElementById('listScreen').style.display = 'flex';
     document.getElementById('headerTitle').textContent = 'memo';
     renderThreadList();
   }
@@ -700,28 +420,43 @@
     currentThreadId = tid;
     document.getElementById('listScreen').style.display = 'none';
     document.getElementById('settingsScreen').style.display = 'none';
-    document.getElementById('detailScreen').style.display = 'block';
+    document.getElementById('detailScreen').style.display = 'flex';
     document.getElementById('headerTitle').textContent = 'memo';
     document.getElementById('replyInput').value = '';
     renderDetail();
     document.getElementById('replyInput').focus();
   }
 
-  // ---------- load from GitHub ----------
+  // ---------- load from GitHub (tree-diff cached) ----------
   async function loadMemos() {
     showStatus('listStatusBar', '読み込み中…', 'ok');
+    document.getElementById('listStatusBar').classList.remove('hidden');
     try {
       const branch = config.branch || await getDefaultBranch();
       config.branch = branch;
       saveConfig(config);
+
       const items = await fetchTree(branch);
-      const contents = await Promise.all(items.map(fetchBlob));
-      memos = contents.map(text => {
+      const cache = loadCache();
+      let fetchedCount = 0;
+
+      const results = await Promise.all(items.map(async item => {
+        const cached = cache[item.path];
+        if (cached && cached.sha === item.sha) {
+          return cached;
+        }
+        const text = await fetchBlob(item);
         const { meta, body } = parseFrontmatter(text);
-        return { ...meta, body };
-      }).filter(m => m.id && m.created_at);
+        const entry = { sha: item.sha, ...meta, body };
+        cache[item.path] = entry;
+        fetchedCount++;
+        return entry;
+      }));
+
+      saveCache(cache);
+      memos = results.filter(m => m.id && m.created_at);
       renderThreadList();
-      document.getElementById('listStatusBar').className = 'status-bar';
+      showStatus('listStatusBar', `更新完了(新規取得 ${fetchedCount} 件 / 全 ${memos.length} 件)`, 'ok');
     } catch (e) {
       showStatus('listStatusBar', `読み込み失敗: ${e.message}`, 'err');
     }
@@ -746,6 +481,7 @@
 
     const btn = document.getElementById('newMemoBtn');
     btn.disabled = true;
+    document.getElementById('listStatusBar').classList.remove('hidden');
     showStatus('listStatusBar', '記録中…', 'ok');
     try {
       await commitOne(memo);
@@ -783,6 +519,7 @@
 
     const btn = document.getElementById('replyBtn');
     btn.disabled = true;
+    document.getElementById('detailStatusBar').classList.remove('hidden');
     showStatus('detailStatusBar', '記録中…', 'ok');
     try {
       await commitOne(memo);
@@ -802,8 +539,10 @@
     const p = nowParts(created);
     const path = `${MEMO_DIR}/${p.yyyy}/${p.mm}/${p.dd}/${memo.id}.md`;
     const content = buildMarkdown(memo);
-    await commitMemo(path, content, `memo: ${memo.body.slice(0, 40).replace(/\n/g, ' ')}`);
+    const res = await commitMemo(path, content, `memo: ${memo.body.slice(0, 40).replace(/\n/g, ' ')}`);
     memos.push(memo);
+    const sha = res && res.content && res.content.sha;
+    if (sha) putCacheEntry(path, sha, memo);
   }
 
   // ---------- settings screen ----------
@@ -811,7 +550,7 @@
     document.getElementById('listScreen').style.display = 'none';
     document.getElementById('detailScreen').style.display = 'none';
     document.getElementById('settingsScreen').style.display = 'block';
-    document.getElementById('cancelSettings').style.display = isInitial ? 'none' : 'inline-block';
+    document.getElementById('cancelSettings').style.display = isInitial ? 'none' : 'inline-flex';
     if (config) {
       document.getElementById('inputOwner').value = config.owner || '';
       document.getElementById('inputRepo').value = config.repo || '';
@@ -827,12 +566,12 @@
     if (!owner || !repo || !pat) {
       statusEl.textContent = 'すべて入力してください。';
       statusEl.style.display = 'block';
-      statusEl.style.color = 'var(--stamp-red)';
+      statusEl.className = 'text-xs font-mono mt-3 text-error';
       return;
     }
     statusEl.textContent = '接続確認中…';
     statusEl.style.display = 'block';
-    statusEl.style.color = 'var(--ink-muted)';
+    statusEl.className = 'text-xs font-mono mt-3 text-base-content/50';
 
     const testConfig = { owner, repo, pat, branch: null };
     config = testConfig;
@@ -844,7 +583,7 @@
       loadMemos();
     } catch (e) {
       statusEl.textContent = `接続失敗: ${e.message}`;
-      statusEl.style.color = 'var(--stamp-red)';
+      statusEl.className = 'text-xs font-mono mt-3 text-error';
     }
   }
 
