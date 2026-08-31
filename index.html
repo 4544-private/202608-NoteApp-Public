@@ -44,22 +44,30 @@
   .app-h { height: 100vh; height: 100dvh; }
 </style>
 </head>
-<body class="app-h bg-base-100 text-base-content font-sans flex flex-col items-center overflow-hidden">
+<body class="app-h bg-base-100 text-base-content font-sans overflow-hidden">
 
-<div class="app-h w-full max-w-xl px-4 flex flex-col min-h-0">
+<div class="drawer app-h">
+  <input id="mainDrawer" type="checkbox" class="drawer-toggle">
 
-  <div class="navbar min-h-0 px-0 py-4 border-b border-base-300 shrink-0">
-    <div class="flex-1">
-      <span class="font-mono text-sm font-semibold tracking-wide">
-        <span class="text-primary">&gt;</span> <span id="headerTitle">memo</span>
-      </span>
-    </div>
-    <div class="flex-none">
-      <button id="openSettings" class="btn btn-ghost btn-xs font-sans font-normal text-base-content/60">設定</button>
-    </div>
-  </div>
+  <div class="drawer-content app-h flex flex-col items-center">
+    <div class="app-h w-full max-w-xl px-4 flex flex-col min-h-0">
 
-  <!-- ===== list screen ===== -->
+      <div class="navbar bg-base-100 border-b border-base-300 px-0 shrink-0">
+        <div class="navbar-start gap-1">
+          <label for="mainDrawer" aria-label="メニューを開く" class="btn btn-ghost btn-square btn-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </label>
+          <div id="navStart">
+            <span class="font-mono text-sm font-semibold tracking-wide">
+              <span class="text-primary">&gt;</span> memo
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== list screen ===== -->
   <div id="listScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
     <div class="shrink-0 bg-base-100 border-b border-base-300 py-4">
       <textarea id="newMemoInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[76px]" placeholder="今、思ったことを。" autofocus></textarea>
@@ -77,11 +85,6 @@
 
   <!-- ===== detail screen ===== -->
   <div id="detailScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
-    <div class="shrink-0 bg-base-100 border-b border-base-300 flex items-center gap-3 py-4">
-      <button id="backBtn" class="btn btn-ghost btn-xs font-mono">← 一覧</button>
-      <span id="detailTitle" class="text-[11px] font-mono text-base-content/40"></span>
-    </div>
-
     <div id="detailEntries" class="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-base-300 py-1"></div>
 
     <div class="shrink-0 bg-base-100 border-t border-base-300 py-3">
@@ -121,17 +124,28 @@
     <div id="settingsStatus" style="display:none;" class="text-xs font-mono mt-3"></div>
   </div>
 
+    </div>
+  </div>
+
+  <div class="drawer-side z-20">
+    <label for="mainDrawer" aria-label="メニューを閉じる" class="drawer-overlay"></label>
+    <ul class="menu bg-base-200 text-base-content min-h-full w-60 p-3 gap-1">
+      <li><button id="openSettings" class="font-mono text-sm justify-start">設定</button></li>
+    </ul>
+  </div>
 </div>
 
 <script>
 (function () {
   const CONFIG_KEY = 'memoapp_config';
   const MEMO_DIR = 'memos';
+  const STARS_PATH = 'meta/stars.json';
 
   let config = null;
   let memos = [];          // flat parsed memo objects
   let currentLocation = null;
   let currentThreadId = null; // set when detail screen is open
+  let starsState = { sha: null, stars: {} }; // { [memoId]: true }
 
   // ---------- utils ----------
   function utf8ToBase64(str) {
@@ -183,6 +197,40 @@
     const div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  // ---------- star button (toggle-able any time, independent of memo file content) ----------
+  function starIconSvg(filled) {
+    return filled
+      ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4"><path d="M12 2.5l2.9 6.26 6.85.86-5.05 4.77 1.36 6.86L12 17.9l-6.06 3.35 1.36-6.86L2.25 9.62l6.85-.86L12 2.5z"/></svg>`
+      : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2.5l2.9 6.26 6.85.86-5.05 4.77 1.36 6.86L12 17.9l-6.06 3.35 1.36-6.86L2.25 9.62l6.85-.86L12 2.5z"/></svg>`;
+  }
+
+  function renderStarBtn(id) {
+    const starred = isStarred(id);
+    const colorClass = starred ? 'text-warning' : 'text-base-content/25 hover:text-base-content/50';
+    return `<button class="reset-btn star-btn ${colorClass} transition-colors p-1" data-star-id="${escapeHtml(id)}" aria-label="スター">${starIconSvg(starred)}</button>`;
+  }
+
+  function wireStarButtons(container, onDone) {
+    container.querySelectorAll('.star-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.starId;
+        btn.disabled = true;
+        try {
+          await toggleStar(id);
+          onDone();
+        } catch (err) {
+          if (document.getElementById('listScreen').style.display !== 'none') {
+            showStatus('listStatusBar', `スター更新失敗: ${err.message}`, 'err');
+          } else {
+            showStatus('detailStatusBar', `スター更新失敗: ${err.message}`, 'err');
+          }
+          btn.disabled = false;
+        }
+      });
+    });
   }
 
   // ---------- config ----------
@@ -265,6 +313,66 @@
         branch: config.branch
       })
     });
+  }
+
+  // ---------- stars.json (single mutable index file; memo files themselves stay write-once) ----------
+  function sortObjectKeys(obj) {
+    const out = {};
+    Object.keys(obj).sort().forEach(k => { out[k] = obj[k]; });
+    return out;
+  }
+
+  async function loadStars() {
+    try {
+      const data = await ghFetch(
+        `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${STARS_PATH}?ref=${encodeURIComponent(config.branch)}`
+      );
+      const text = base64ToUtf8(data.content.replace(/\n/g, ''));
+      starsState = { sha: data.sha, stars: JSON.parse(text) };
+    } catch (e) {
+      if (e.message.startsWith('404')) {
+        starsState = { sha: null, stars: {} }; // file doesn't exist yet; created on first star
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  function isStarred(id) {
+    return !!starsState.stars[id];
+  }
+
+  async function writeStars(updatedStars) {
+    const content = JSON.stringify(sortObjectKeys(updatedStars), null, 2) + '\n';
+    const body = {
+      message: 'update stars',
+      content: utf8ToBase64(content),
+      branch: config.branch
+    };
+    if (starsState.sha) body.sha = starsState.sha;
+    const res = await ghFetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${STARS_PATH}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+    starsState = { sha: res.content.sha, stars: updatedStars };
+  }
+
+  async function toggleStar(id) {
+    const updated = { ...starsState.stars };
+    if (updated[id]) delete updated[id]; else updated[id] = true;
+    try {
+      await writeStars(updated);
+    } catch (e) {
+      // sha mismatch (another write landed first) — refresh once and retry the same toggle
+      if (e.message.startsWith('409') || e.message.toLowerCase().includes('does not match')) {
+        await loadStars();
+        const retried = { ...starsState.stars };
+        if (retried[id]) delete retried[id]; else retried[id] = true;
+        await writeStars(retried);
+      } else {
+        throw e;
+      }
+    }
   }
 
   // ---------- frontmatter ----------
@@ -378,7 +486,10 @@
         <button class="reset-btn thread-row w-full text-left flex items-start gap-3 py-4 border-b border-base-300 hover:bg-base-200/60 transition-colors" data-tid="${escapeHtml(t.tid)}">
           <p class="flex-1 min-w-0 text-sm leading-relaxed line-clamp-3 whitespace-pre-line">${escapeHtml(root.body)}</p>
           <span class="flex flex-col items-end gap-1 flex-shrink-0 pt-0.5">
-            ${badge}
+            <span class="flex items-center gap-1">
+              ${renderStarBtn(root.id)}
+              ${badge}
+            </span>
             <span class="text-[11px] font-mono text-base-content/40">${relativeTime(t.latest)}</span>
           </span>
         </button>`;
@@ -387,6 +498,7 @@
     container.querySelectorAll('.thread-row').forEach(row => {
       row.addEventListener('click', () => openThread(row.dataset.tid));
     });
+    wireStarButtons(container, renderThreadList);
   }
 
   // ---------- render: detail screen ----------
@@ -398,15 +510,31 @@
     container.innerHTML = thread.entries.map(m => {
       const loc = m.location ? `<div class="text-[10px] font-mono text-base-content/40 mt-1">${escapeHtml(m.location.lat)}, ${escapeHtml(m.location.lng)}</div>` : '';
       return `
-        <div class="flex gap-3 py-3">
+        <div class="flex gap-3 py-3 items-start">
           <div class="text-[11px] font-mono text-base-content/40 min-w-[44px] pt-0.5">${relativeTime(m.created_at)}</div>
           <div class="flex-1 min-w-0">
             <div class="text-sm leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(m.body)}</div>
             ${loc}
           </div>
+          <div class="flex-shrink-0">${renderStarBtn(m.id)}</div>
         </div>`;
     }).join('');
-    container.scrollTop = container.scrollHeight;
+    wireStarButtons(container, renderDetail);
+  }
+
+  // ---------- navbar-start: swaps between app title and back+thread-info ----------
+  function setNavList() {
+    document.getElementById('navStart').innerHTML = `
+      <span class="font-mono text-sm font-semibold tracking-wide">
+        <span class="text-primary">&gt;</span> memo
+      </span>`;
+  }
+
+  function setNavDetail() {
+    document.getElementById('navStart').innerHTML = `
+      <button id="backBtn" class="btn btn-ghost btn-sm font-mono">← 一覧</button>
+      <span id="detailTitle" class="text-[11px] font-mono text-base-content/40 ml-2"></span>`;
+    document.getElementById('backBtn').addEventListener('click', showList);
   }
 
   // ---------- navigation ----------
@@ -415,7 +543,7 @@
     document.getElementById('detailScreen').style.display = 'none';
     document.getElementById('settingsScreen').style.display = 'none';
     document.getElementById('listScreen').style.display = 'flex';
-    document.getElementById('headerTitle').textContent = 'memo';
+    setNavList();
     renderThreadList();
   }
 
@@ -424,9 +552,10 @@
     document.getElementById('listScreen').style.display = 'none';
     document.getElementById('settingsScreen').style.display = 'none';
     document.getElementById('detailScreen').style.display = 'flex';
-    document.getElementById('headerTitle').textContent = 'memo';
+    setNavDetail();
     document.getElementById('replyInput').value = '';
     renderDetail();
+    document.getElementById('detailEntries').scrollTop = document.getElementById('detailEntries').scrollHeight;
     document.getElementById('replyInput').focus();
   }
 
@@ -439,7 +568,10 @@
       config.branch = branch;
       saveConfig(config);
 
-      const items = await fetchTree(branch);
+      const [items] = await Promise.all([
+        fetchTree(branch),
+        loadStars()
+      ]);
       const cache = loadCache();
       let fetchedCount = 0;
 
@@ -529,6 +661,7 @@
       textarea.value = '';
       showStatus('detailStatusBar', '記録しました', 'ok');
       renderDetail();
+      document.getElementById('detailEntries').scrollTop = document.getElementById('detailEntries').scrollHeight;
     } catch (e) {
       showStatus('detailStatusBar', `記録失敗: ${e.message}`, 'err');
     } finally {
@@ -554,6 +687,7 @@
     document.getElementById('detailScreen').style.display = 'none';
     document.getElementById('settingsScreen').style.display = 'block';
     document.getElementById('cancelSettings').style.display = isInitial ? 'none' : 'inline-flex';
+    setNavList();
     if (config) {
       document.getElementById('inputOwner').value = config.owner || '';
       document.getElementById('inputRepo').value = config.repo || '';
@@ -594,10 +728,12 @@
   function init() {
     config = loadConfig();
 
-    document.getElementById('openSettings').addEventListener('click', () => showSettings(false));
+    document.getElementById('openSettings').addEventListener('click', () => {
+      document.getElementById('mainDrawer').checked = false;
+      showSettings(false);
+    });
     document.getElementById('cancelSettings').addEventListener('click', showList);
     document.getElementById('saveSettings').addEventListener('click', handleSaveSettings);
-    document.getElementById('backBtn').addEventListener('click', showList);
 
     document.getElementById('newMemoBtn').addEventListener('click', submitNewMemo);
     document.getElementById('newMemoInput').addEventListener('keydown', (e) => {
