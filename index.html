@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>memo → git</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #EDEAE3;
+    --surface: #FFFFFF;
+    --ink: #1B1B18;
+    --ink-muted: #6B675E;
+    --ink-faint: #A8A296;
+    --accent: #2F5D50;
+    --accent-soft: #E1EAE6;
+    --line: #D8D3C7;
+    --stamp-red: #8C3B2E;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --font-sans: 'IBM Plex Sans JP', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .shell {
+    width: 100%;
+    max-width: 640px;
+    padding: 0 16px 64px;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* ---------- header ---------- */
+  header {
+    padding: 20px 0 12px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+  }
+
+  header h1 {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin: 0;
+    color: var(--ink);
+  }
+
+  header h1::before {
+    content: "> ";
+    color: var(--accent);
+  }
+
+  .settings-link {
+    font-size: 12px;
+    color: var(--ink-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    padding: 4px;
+  }
+  .settings-link:hover { color: var(--ink); }
+
+  /* ---------- capture box (shared by list / detail) ---------- */
+  .capture {
+    position: sticky;
+    top: 0;
+    background: var(--paper);
+    padding: 16px 0 14px;
+    z-index: 10;
+    border-bottom: 1px solid var(--line);
+  }
+
+  textarea.memo-input {
+    width: 100%;
+    min-height: 76px;
+    resize: vertical;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 14.5px;
+    line-height: 1.6;
+    padding: 12px 14px;
+    outline: none;
+  }
+  textarea.memo-input:focus {
+    border-color: var(--accent);
+  }
+  textarea.memo-input::placeholder {
+    color: var(--ink-faint);
+  }
+
+  .capture-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  button.record-btn {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 18px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.record-btn:hover { background: var(--accent); }
+  button.record-btn:disabled {
+    background: var(--ink-faint);
+    cursor: default;
+  }
+
+  .hint {
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 6px;
+    font-family: var(--font-mono);
+  }
+
+  /* ---------- status ---------- */
+  .status-bar {
+    display: none;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 0 0;
+  }
+  .status-bar.show { display: block; }
+  .status-bar.ok { color: var(--accent); }
+  .status-bar.err { color: var(--stamp-red); }
+
+  /* ---------- thread list (list screen) ---------- */
+  .thread-list {
+    flex: 1;
+    padding-top: 4px;
+  }
+
+  .empty-state {
+    color: var(--ink-faint);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 40px 0;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  .thread-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 14px 2px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    background: none;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+  }
+  .thread-row:hover .preview { color: var(--accent); }
+
+  .thread-row .preview {
+    flex: 1;
+    min-width: 0;
+    font-size: 14.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .thread-row .row-meta {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+
+  .thread-row .count-badge {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    padding: 1px 6px;
+    line-height: 1.5;
+  }
+
+  /* ---------- detail screen (thread history) ---------- */
+  .detail-header {
+    position: sticky;
+    top: 0;
+    background: var(--paper);
+    z-index: 11;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 0 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .back-btn {
+    background: none;
+    border: none;
+    color: var(--ink-muted);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 4px 4px 0;
+  }
+  .back-btn:hover { color: var(--accent); }
+
+  .detail-title {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+
+  .detail-entries {
+    padding-top: 8px;
+    margin-bottom: 8px;
+  }
+
+  .entry {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .entry .timestamp {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    padding-top: 2px;
+    min-width: 44px;
+  }
+
+  .entry .body {
+    flex: 1;
+    font-size: 14.5px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .entry .loc-meta {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    margin-top: 4px;
+  }
+
+  /* ---------- settings screen ---------- */
+  .settings-screen {
+    padding-top: 40px;
+  }
+  .settings-screen h2 {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    margin: 0 0 4px;
+  }
+  .settings-screen p.desc {
+    color: var(--ink-muted);
+    font-size: 13px;
+    line-height: 1.7;
+    margin: 0 0 24px;
+  }
+  .field {
+    margin-bottom: 16px;
+  }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--ink-muted);
+    margin-bottom: 6px;
+    font-family: var(--font-mono);
+  }
+  .field input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    padding: 9px 10px;
+    outline: none;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .field .note {
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 5px;
+    line-height: 1.5;
+  }
+  .settings-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 24px;
+  }
+  button.primary {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 20px;
+    cursor: pointer;
+  }
+  button.primary:hover { background: var(--accent); }
+  button.secondary {
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--ink-muted);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    padding: 9px 16px;
+    cursor: pointer;
+  }
+  button.secondary:hover { color: var(--ink); border-color: var(--ink); }
+
+  ::selection { background: var(--accent-soft); }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <header>
+    <h1 id="headerTitle">memo</h1>
+    <button class="settings-link" id="openSettings">設定</button>
+  </header>
+
+  <!-- ===== list screen (thread previews, LINE-like) ===== -->
+  <div id="listScreen" style="display:none;">
+    <div class="capture">
+      <textarea id="newMemoInput" class="memo-input" placeholder="今、思ったことを。" autofocus></textarea>
+      <div class="capture-row">
+        <button class="record-btn" id="newMemoBtn">記録する</button>
+      </div>
+      <div class="hint" id="locationHint"></div>
+      <div class="status-bar" id="listStatusBar"></div>
+    </div>
+
+    <div class="thread-list" id="threadList">
+      <div class="empty-state">まだメモがありません。</div>
+    </div>
+  </div>
+
+  <!-- ===== detail screen (single thread history) ===== -->
+  <div id="detailScreen" style="display:none;">
+    <div class="detail-header">
+      <button class="back-btn" id="backBtn">← 一覧</button>
+      <span class="detail-title" id="detailTitle"></span>
+    </div>
+
+    <div class="detail-entries" id="detailEntries"></div>
+
+    <div class="capture">
+      <textarea id="replyInput" class="memo-input" placeholder="この件について追記する…"></textarea>
+      <div class="capture-row">
+        <button class="record-btn" id="replyBtn">追記する</button>
+      </div>
+      <div class="status-bar" id="detailStatusBar"></div>
+    </div>
+  </div>
+
+  <!-- ===== settings screen ===== -->
+  <div id="settingsScreen" class="settings-screen" style="display:none;">
+    <h2>接続設定</h2>
+    <p class="desc">
+      メモは GitHub の private リポジトリにファイルとしてコミットされます。
+      Fine-grained Personal Access Token を、対象リポジトリ・Contents 権限(Read and write)のみに絞って発行してください。
+      トークンはこのブラウザの localStorage にのみ保存されます。
+    </p>
+    <div class="field">
+      <label for="inputOwner">リポジトリ所有者(ユーザー名)</label>
+      <input id="inputOwner" type="text" placeholder="例: yourname" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="inputRepo">リポジトリ名</label>
+      <input id="inputRepo" type="text" placeholder="例: my-memos" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="inputPat">Personal Access Token</label>
+      <input id="inputPat" type="password" placeholder="github_pat_xxxxxxxx" autocomplete="off">
+      <div class="note">Fine-grained token / 対象リポジトリのみ / Contents: Read and write</div>
+    </div>
+    <div class="settings-actions">
+      <button class="primary" id="saveSettings">保存して接続</button>
+      <button class="secondary" id="cancelSettings" style="display:none;">キャンセル</button>
+    </div>
+    <div id="settingsStatus" style="display:none;" class="hint"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const CONFIG_KEY = 'memoapp_config';
+  const MEMO_DIR = 'memos';
+
+  let config = null;
+  let memos = [];          // flat parsed memo objects
+  let currentLocation = null;
+  let currentThreadId = null; // set when detail screen is open
+
+  // ---------- utils ----------
+  function utf8ToBase64(str) {
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+  function base64ToUtf8(str) {
+    return decodeURIComponent(escape(atob(str)));
+  }
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function nowParts(d) {
+    return {
+      yyyy: d.getFullYear(),
+      mm: pad(d.getMonth() + 1),
+      dd: pad(d.getDate()),
+      hh: pad(d.getHours()),
+      mi: pad(d.getMinutes()),
+      ss: pad(d.getSeconds())
+    };
+  }
+
+  function localISOString(d) {
+    const tzOffsetMin = -d.getTimezoneOffset();
+    const sign = tzOffsetMin >= 0 ? '+' : '-';
+    const abs = Math.abs(tzOffsetMin);
+    const offH = pad(Math.floor(abs / 60));
+    const offM = pad(abs % 60);
+    const p = nowParts(d);
+    return `${p.yyyy}-${p.mm}-${p.dd}T${p.hh}:${p.mi}:${p.ss}${sign}${offH}:${offM}`;
+  }
+
+  function randomHex(len) {
+    const bytes = new Uint8Array(len);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').slice(0, len);
+  }
+
+  function makeId(d) {
+    const p = nowParts(d);
+    return `${p.yyyy}${p.mm}${p.dd}-${p.hh}${p.mi}${p.ss}-${randomHex(4)}`;
+  }
+
+  function relativeTime(iso) {
+    const d = new Date(iso);
+    return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function firstLine(text) {
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  // ---------- config ----------
+  function loadConfig() {
+    try {
+      const raw = localStorage.getItem(CONFIG_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function saveConfig(c) {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
+  }
+
+  // ---------- GitHub API ----------
+  function ghHeaders() {
+    return {
+      'Authorization': `Bearer ${config.pat}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    };
+  }
+
+  async function ghFetch(url, opts = {}) {
+    const res = await fetch(url, { ...opts, headers: { ...ghHeaders(), ...(opts.headers || {}) } });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const body = await res.json();
+        if (body && body.message) msg += ` — ${body.message}`;
+      } catch (e) {}
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  async function getDefaultBranch() {
+    const info = await ghFetch(`https://api.github.com/repos/${config.owner}/${config.repo}`);
+    return info.default_branch;
+  }
+
+  async function fetchTree(branch) {
+    const data = await ghFetch(
+      `https://api.github.com/repos/${config.owner}/${config.repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+    );
+    return (data.tree || []).filter(
+      item => item.type === 'blob' && item.path.startsWith(MEMO_DIR + '/') && item.path.endsWith('.md')
+    );
+  }
+
+  async function fetchBlob(item) {
+    const data = await ghFetch(item.url);
+    return base64ToUtf8(data.content.replace(/\n/g, ''));
+  }
+
+  async function commitMemo(path, content, message) {
+    return ghFetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${path}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        message,
+        content: utf8ToBase64(content),
+        branch: config.branch
+      })
+    });
+  }
+
+  // ---------- frontmatter ----------
+  function parseFrontmatter(text) {
+    const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+    if (!m) return { meta: {}, body: text.trim() };
+    const [, fm, body] = m;
+    const meta = {};
+    const lines = fm.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\s/.test(line)) continue; // nested (location) handled below
+      const km = line.match(/^([a-zA-Z_]+):\s*(.*)$/);
+      if (!km) continue;
+      const key = km[1];
+      let val = km[2].trim();
+      if (key === 'location') {
+        const loc = {};
+        let j = i + 1;
+        while (j < lines.length && /^\s+/.test(lines[j])) {
+          const lm = lines[j].match(/^\s+([a-zA-Z_]+):\s*(.*)$/);
+          if (lm) loc[lm[1]] = lm[2].trim();
+          j++;
+        }
+        meta.location = loc;
+        continue;
+      }
+      if (val === 'null' || val === '') val = null;
+      meta[key] = val;
+    }
+    return { meta, body: body.trim() };
+  }
+
+  function buildMarkdown(memo) {
+    let fm = '---\n';
+    fm += `id: ${memo.id}\n`;
+    fm += `thread_id: ${memo.thread_id}\n`;
+    fm += `parent_id: ${memo.parent_id ?? 'null'}\n`;
+    fm += `created_at: ${memo.created_at}\n`;
+    if (memo.location) {
+      fm += `location:\n  lat: ${memo.location.lat}\n  lng: ${memo.location.lng}\n`;
+    }
+    fm += `status: unprocessed\n`;
+    fm += '---\n\n';
+    return fm + memo.body + '\n';
+  }
+
+  // ---------- geolocation (best-effort, silent) ----------
+  function requestLocation() {
+    if (!('geolocation' in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        currentLocation = { lat: pos.coords.latitude.toFixed(4), lng: pos.coords.longitude.toFixed(4) };
+        const hint = document.getElementById('locationHint');
+        if (hint) hint.textContent = `位置情報を取得済み (${currentLocation.lat}, ${currentLocation.lng})`;
+      },
+      () => { /* silently ignore denial/failure */ },
+      { timeout: 5000 }
+    );
+  }
+
+  // ---------- status bars ----------
+  function showStatus(elId, msg, kind) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.textContent = msg;
+    el.className = `status-bar show ${kind}`;
+    if (kind === 'ok') {
+      setTimeout(() => { el.className = 'status-bar'; }, 2500);
+    }
+  }
+
+  // ---------- thread grouping ----------
+  function buildThreads() {
+    const threadMap = new Map(); // thread_id -> [memos]
+    for (const m of memos) {
+      const tid = m.thread_id || m.id;
+      if (!threadMap.has(tid)) threadMap.set(tid, []);
+      threadMap.get(tid).push(m);
+    }
+    const threads = [];
+    for (const [tid, list] of threadMap) {
+      list.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const latest = list[list.length - 1].created_at;
+      threads.push({ tid, entries: list, latest });
+    }
+    threads.sort((a, b) => new Date(b.latest) - new Date(a.latest));
+    return threads;
+  }
+
+  function getThread(tid) {
+    return buildThreads().find(t => t.tid === tid);
+  }
+
+  // ---------- render: list screen ----------
+  function renderThreadList() {
+    const container = document.getElementById('threadList');
+    if (memos.length === 0) {
+      container.innerHTML = '<div class="empty-state">まだメモがありません。<br>上の欄に書いて「記録する」を押してください。</div>';
+      return;
+    }
+    const threads = buildThreads();
+    container.innerHTML = threads.map(t => {
+      const root = t.entries[0];
+      const preview = firstLine(root.body);
+      const count = t.entries.length;
+      const badge = count > 1 ? `<span class="count-badge">${count}件</span>` : '';
+      return `
+        <button class="thread-row" data-tid="${escapeHtml(t.tid)}">
+          <span class="preview">${escapeHtml(preview)}</span>
+          <span class="row-meta">${badge}<span>${relativeTime(t.latest)}</span></span>
+        </button>`;
+    }).join('');
+
+    container.querySelectorAll('.thread-row').forEach(row => {
+      row.addEventListener('click', () => openThread(row.dataset.tid));
+    });
+  }
+
+  // ---------- render: detail screen ----------
+  function renderDetail() {
+    const thread = getThread(currentThreadId);
+    if (!thread) { showList(); return; }
+    document.getElementById('detailTitle').textContent = `${thread.entries.length}件 / 最初のメモ: ${relativeTime(thread.entries[0].created_at)}`;
+    const container = document.getElementById('detailEntries');
+    container.innerHTML = thread.entries.map(m => {
+      const loc = m.location ? `<div class="loc-meta">${escapeHtml(m.location.lat)}, ${escapeHtml(m.location.lng)}</div>` : '';
+      return `
+        <div class="entry">
+          <div class="timestamp">${relativeTime(m.created_at)}</div>
+          <div>
+            <div class="body">${escapeHtml(m.body)}</div>
+            ${loc}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ---------- navigation ----------
+  function showList() {
+    currentThreadId = null;
+    document.getElementById('detailScreen').style.display = 'none';
+    document.getElementById('settingsScreen').style.display = 'none';
+    document.getElementById('listScreen').style.display = 'block';
+    document.getElementById('headerTitle').textContent = 'memo';
+    renderThreadList();
+  }
+
+  function openThread(tid) {
+    currentThreadId = tid;
+    document.getElementById('listScreen').style.display = 'none';
+    document.getElementById('settingsScreen').style.display = 'none';
+    document.getElementById('detailScreen').style.display = 'block';
+    document.getElementById('headerTitle').textContent = 'memo';
+    document.getElementById('replyInput').value = '';
+    renderDetail();
+    document.getElementById('replyInput').focus();
+  }
+
+  // ---------- load from GitHub ----------
+  async function loadMemos() {
+    showStatus('listStatusBar', '読み込み中…', 'ok');
+    try {
+      const branch = config.branch || await getDefaultBranch();
+      config.branch = branch;
+      saveConfig(config);
+      const items = await fetchTree(branch);
+      const contents = await Promise.all(items.map(fetchBlob));
+      memos = contents.map(text => {
+        const { meta, body } = parseFrontmatter(text);
+        return { ...meta, body };
+      }).filter(m => m.id && m.created_at);
+      renderThreadList();
+      document.getElementById('listStatusBar').className = 'status-bar';
+    } catch (e) {
+      showStatus('listStatusBar', `読み込み失敗: ${e.message}`, 'err');
+    }
+  }
+
+  // ---------- submit: new memo (from list screen) ----------
+  async function submitNewMemo() {
+    const textarea = document.getElementById('newMemoInput');
+    const body = textarea.value.trim();
+    if (!body) return;
+
+    const now = new Date();
+    const id = makeId(now);
+    const memo = {
+      id,
+      thread_id: id,
+      parent_id: null,
+      created_at: localISOString(now),
+      location: currentLocation,
+      body
+    };
+
+    const btn = document.getElementById('newMemoBtn');
+    btn.disabled = true;
+    showStatus('listStatusBar', '記録中…', 'ok');
+    try {
+      await commitOne(memo);
+      textarea.value = '';
+      showStatus('listStatusBar', '記録しました', 'ok');
+      renderThreadList();
+    } catch (e) {
+      showStatus('listStatusBar', `記録失敗: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+      textarea.focus();
+    }
+  }
+
+  // ---------- submit: reply (from detail screen) ----------
+  async function submitReply() {
+    if (!currentThreadId) return;
+    const textarea = document.getElementById('replyInput');
+    const body = textarea.value.trim();
+    if (!body) return;
+
+    const thread = getThread(currentThreadId);
+    const lastEntry = thread.entries[thread.entries.length - 1];
+
+    const now = new Date();
+    const id = makeId(now);
+    const memo = {
+      id,
+      thread_id: currentThreadId,
+      parent_id: lastEntry.id,
+      created_at: localISOString(now),
+      location: currentLocation,
+      body
+    };
+
+    const btn = document.getElementById('replyBtn');
+    btn.disabled = true;
+    showStatus('detailStatusBar', '記録中…', 'ok');
+    try {
+      await commitOne(memo);
+      textarea.value = '';
+      showStatus('detailStatusBar', '記録しました', 'ok');
+      renderDetail();
+    } catch (e) {
+      showStatus('detailStatusBar', `記録失敗: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+      textarea.focus();
+    }
+  }
+
+  async function commitOne(memo) {
+    const created = new Date(memo.created_at);
+    const p = nowParts(created);
+    const path = `${MEMO_DIR}/${p.yyyy}/${p.mm}/${p.dd}/${memo.id}.md`;
+    const content = buildMarkdown(memo);
+    await commitMemo(path, content, `memo: ${memo.body.slice(0, 40).replace(/\n/g, ' ')}`);
+    memos.push(memo);
+  }
+
+  // ---------- settings screen ----------
+  function showSettings(isInitial) {
+    document.getElementById('listScreen').style.display = 'none';
+    document.getElementById('detailScreen').style.display = 'none';
+    document.getElementById('settingsScreen').style.display = 'block';
+    document.getElementById('cancelSettings').style.display = isInitial ? 'none' : 'inline-block';
+    if (config) {
+      document.getElementById('inputOwner').value = config.owner || '';
+      document.getElementById('inputRepo').value = config.repo || '';
+      document.getElementById('inputPat').value = config.pat || '';
+    }
+  }
+
+  async function handleSaveSettings() {
+    const owner = document.getElementById('inputOwner').value.trim();
+    const repo = document.getElementById('inputRepo').value.trim();
+    const pat = document.getElementById('inputPat').value.trim();
+    const statusEl = document.getElementById('settingsStatus');
+    if (!owner || !repo || !pat) {
+      statusEl.textContent = 'すべて入力してください。';
+      statusEl.style.display = 'block';
+      statusEl.style.color = 'var(--stamp-red)';
+      return;
+    }
+    statusEl.textContent = '接続確認中…';
+    statusEl.style.display = 'block';
+    statusEl.style.color = 'var(--ink-muted)';
+
+    const testConfig = { owner, repo, pat, branch: null };
+    config = testConfig;
+    try {
+      config.branch = await getDefaultBranch();
+      saveConfig(config);
+      showList();
+      requestLocation();
+      loadMemos();
+    } catch (e) {
+      statusEl.textContent = `接続失敗: ${e.message}`;
+      statusEl.style.color = 'var(--stamp-red)';
+    }
+  }
+
+  // ---------- init ----------
+  function init() {
+    config = loadConfig();
+
+    document.getElementById('openSettings').addEventListener('click', () => showSettings(false));
+    document.getElementById('cancelSettings').addEventListener('click', showList);
+    document.getElementById('saveSettings').addEventListener('click', handleSaveSettings);
+    document.getElementById('backBtn').addEventListener('click', showList);
+
+    document.getElementById('newMemoBtn').addEventListener('click', submitNewMemo);
+    document.getElementById('newMemoInput').addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitNewMemo();
+    });
+
+    document.getElementById('replyBtn').addEventListener('click', submitReply);
+    document.getElementById('replyInput').addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitReply();
+    });
+
+    if (!config || !config.owner || !config.repo || !config.pat) {
+      showSettings(true);
+    } else {
+      showList();
+      requestLocation();
+      loadMemos();
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
