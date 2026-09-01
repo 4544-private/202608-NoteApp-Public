@@ -290,7 +290,7 @@
   }
   function putCacheEntry(path, sha, memo) {
     const cache = loadCache();
-    cache[path] = { sha, id: memo.id, thread_id: memo.thread_id, parent_id: memo.parent_id, created_at: memo.created_at, location: memo.location, body: memo.body, attachments: memo.attachments || [], title: memo.title || null, tags: memo.tags || [] };
+    cache[path] = { sha, id: memo.id, thread_id: memo.thread_id, parent_id: memo.parent_id, created_at: memo.created_at, location: memo.location, body: memo.body, attachments: memo.attachments || [], title: memo.title || null, tags: memo.tags || [], link_preview: memo.link_preview || null };
     saveCache(cache);
   }
 
@@ -694,21 +694,24 @@
     const lines = fm.split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      if (/^\s/.test(line)) continue; // nested (location) handled below
+      if (/^\s/.test(line)) continue; // nested lines are consumed by the lookahead below
       const km = line.match(/^([a-zA-Z_]+):\s*(.*)$/);
       if (!km) continue;
       const key = km[1];
       let val = km[2].trim();
-      if (key === 'location') {
-        const loc = {};
+      if (val === '') {
+        // possible nested block (any key, e.g. location:, link_preview:)
+        const nested = {};
         let j = i + 1;
         while (j < lines.length && /^\s+/.test(lines[j])) {
           const lm = lines[j].match(/^\s+([a-zA-Z_]+):\s*(.*)$/);
-          if (lm) loc[lm[1]] = lm[2].trim();
+          if (lm) nested[lm[1]] = lm[2].trim();
           j++;
         }
-        meta.location = loc;
-        continue;
+        if (Object.keys(nested).length) {
+          meta[key] = nested;
+          continue;
+        }
       }
       if (val === 'null' || val === '') val = null;
       meta[key] = val;
@@ -733,9 +736,88 @@
     if (memo.tags && memo.tags.length) {
       fm += `tags: ${memo.tags.join(',')}\n`;
     }
+    if (memo.link_preview) {
+      fm += `link_preview:\n  url: ${memo.link_preview.url}\n`;
+      if (memo.link_preview.title) fm += `  title: ${memo.link_preview.title}\n`;
+      if (memo.link_preview.description) fm += `  description: ${memo.link_preview.description}\n`;
+      if (memo.link_preview.image) fm += `  image: ${memo.link_preview.image}\n`;
+    }
     fm += `status: unprocessed\n`;
     fm += '---\n\n';
     return fm + memo.body + '\n';
+  }
+
+  // ---------- link preview (Teams/Slack-style unfurling), fetched once at capture time ----------
+  function extractFirstUrl(text) {
+    const match = text.match(/https?:\/\/[^\s<>"')\]]+/);
+    return match ? match[0] : null;
+  }
+
+  function withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve(null), ms))
+    ]);
+  }
+
+  function isYouTubeUrl(url) {
+    return /(?:youtube\.com\/watch|youtu\.be\/)/i.test(url);
+  }
+
+  async function fetchYouTubeOEmbed(url) {
+    try {
+      const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+      if (!res.ok) {
+        console.warn('[link preview] YouTube oEmbed HTTP error', res.status);
+        return null;
+      }
+      const d = await res.json();
+      return {
+        url,
+        title: (d.title || '').trim().slice(0, 200),
+        description: d.author_name ? `by ${d.author_name}` : '',
+        image: d.thumbnail_url || ''
+      };
+    } catch (e) {
+      console.warn('[link preview] YouTube oEmbed fetch threw', e);
+      return null;
+    }
+  }
+
+  async function fetchLinkPreview(url) {
+    if (isYouTubeUrl(url)) {
+      const yt = await fetchYouTubeOEmbed(url);
+      if (yt) return yt;
+      // fall through to microlink below as a last resort (likely also blocked, but worth trying)
+    }
+    try {
+      const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
+      if (!res.ok) {
+        console.warn('[link preview] HTTP error', res.status, await res.text().catch(() => ''));
+        return null;
+      }
+      const json = await res.json();
+      if (json.status !== 'success' || !json.data) {
+        console.warn('[link preview] unexpected response', json);
+        return null;
+      }
+      const d = json.data;
+      const clean = (s) => (s || '').replace(/\r?\n/g, ' ').trim().slice(0, 200);
+      const preview = {
+        url,
+        title: clean(d.title),
+        description: clean(d.description),
+        image: (d.image && d.image.url) || ''
+      };
+      if (!preview.title && !preview.description && !preview.image) {
+        console.warn('[link preview] response had no usable fields', d);
+        return null;
+      }
+      return preview;
+    } catch (e) {
+      console.warn('[link preview] fetch threw', e);
+      return null; // best-effort only; the memo still saves fine without a preview
+    }
   }
 
   // ---------- geolocation (best-effort, silent) ----------
@@ -815,6 +897,23 @@
 
   // ---------- render: list screen ----------
   // ---------- shared layout: metadata row (time -> address -> right-aligned extras), then full-width body ----------
+  function renderLinkPreviewCard(lp) {
+    if (!lp || !lp.url) return '';
+    const img = lp.image
+      ? `<img src="${escapeHtml(lp.image)}" class="w-16 h-16 object-cover flex-shrink-0" loading="lazy" alt="">`
+      : '';
+    return `
+      <a href="${escapeHtml(lp.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()"
+         class="flex gap-2 mt-1 border border-base-300 hover:bg-base-200/60 transition-colors overflow-hidden no-underline">
+        ${img}
+        <div class="min-w-0 py-1.5 pr-2 flex flex-col justify-center gap-0.5">
+          ${lp.title ? `<div class="text-xs font-semibold text-base-content truncate">${escapeHtml(lp.title)}</div>` : ''}
+          ${lp.description ? `<div class="text-[11px] text-base-content/50 line-clamp-2">${escapeHtml(lp.description)}</div>` : ''}
+          <div class="text-[10px] text-base-content/30 truncate">${escapeHtml(lp.url)}</div>
+        </div>
+      </a>`;
+  }
+
   function renderMemoBlock(m, { clamp = false, extraRight = '' } = {}) {
     const locText = m.location ? (m.location.address || `${m.location.lat}, ${m.location.lng}`) : '';
     const attachmentsHtml = (m.attachments && m.attachments.length)
@@ -831,6 +930,7 @@
         <span class="flex items-center gap-1 flex-shrink-0">${renderTagBadge(m.tags)}${extraRight}</span>
       </div>
       <p class="text-sm leading-relaxed whitespace-pre-wrap break-words w-full ${clamp ? 'line-clamp-3' : ''}">${escapeHtml(m.body)}</p>
+      ${renderLinkPreviewCard(m.link_preview)}
       ${attachmentsHtml}`;
   }
 
@@ -1035,6 +1135,14 @@
         document.getElementById('listStatusBar').classList.remove('hidden');
         memo.attachments = await uploadAttachments(id, files);
       }
+      const url = extractFirstUrl(body);
+      let linkPreviewFailed = false;
+      if (url) {
+        showStatus('listStatusBar', 'リンク情報を取得中…', 'ok');
+        document.getElementById('listStatusBar').classList.remove('hidden');
+        const preview = await withTimeout(fetchLinkPreview(url), 15000);
+        if (preview) memo.link_preview = preview; else linkPreviewFailed = true;
+      }
       showStatus('listStatusBar', '記録中…', 'ok');
       document.getElementById('listStatusBar').classList.remove('hidden');
       await commitOne(memo);
@@ -1045,7 +1153,7 @@
       selectedTag.new = null;
       renderTagPicker('new');
       clearNewDraft();
-      showStatus('listStatusBar', '記録しました', 'ok');
+      showStatus('listStatusBar', linkPreviewFailed ? '記録しました(リンクプレビューは取得できませんでした)' : '記録しました', 'ok');
       renderThreadList();
       scrollListToBottom();
     } catch (e) {
@@ -1088,6 +1196,14 @@
         document.getElementById('detailStatusBar').classList.remove('hidden');
         memo.attachments = await uploadAttachments(id, files);
       }
+      const url = extractFirstUrl(body);
+      let linkPreviewFailed = false;
+      if (url) {
+        showStatus('detailStatusBar', 'リンク情報を取得中…', 'ok');
+        document.getElementById('detailStatusBar').classList.remove('hidden');
+        const preview = await withTimeout(fetchLinkPreview(url), 15000);
+        if (preview) memo.link_preview = preview; else linkPreviewFailed = true;
+      }
       showStatus('detailStatusBar', '記録中…', 'ok');
       document.getElementById('detailStatusBar').classList.remove('hidden');
       await commitOne(memo);
@@ -1097,7 +1213,7 @@
       selectedTag.reply = null;
       renderTagPicker('reply');
       clearReplyDraft(currentThreadId);
-      showStatus('detailStatusBar', '記録しました', 'ok');
+      showStatus('detailStatusBar', linkPreviewFailed ? '記録しました(リンクプレビューは取得できませんでした)' : '記録しました', 'ok');
       renderDetail();
       document.getElementById('detailEntries').scrollTop = document.getElementById('detailEntries').scrollHeight;
     } catch (e) {
