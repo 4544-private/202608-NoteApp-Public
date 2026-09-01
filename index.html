@@ -53,13 +53,13 @@
     <div class="app-h w-full max-w-xl px-4 flex flex-col min-h-0">
 
       <div class="navbar bg-base-100 border-b border-base-300 px-0 shrink-0">
-        <div class="navbar-start gap-1">
+        <div class="navbar-start gap-1 min-w-0">
           <label for="mainDrawer" aria-label="メニューを開く" class="btn btn-ghost btn-square btn-sm">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </label>
-          <div id="navStart">
+          <div id="navStart" class="flex items-center gap-1 min-w-0 flex-1">
             <span class="font-mono text-sm font-semibold tracking-wide">
               <span class="text-primary">&gt;</span> memo
             </span>
@@ -69,8 +69,12 @@
 
       <!-- ===== list screen ===== -->
   <div id="listScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
-    <div class="shrink-0 bg-base-100 border-b border-base-300 py-4">
-      <input id="newMemoTitleInput" type="text" class="input input-bordered w-full font-mono text-sm mb-2" placeholder="件名(省略可)" autofocus>
+    <div id="threadList" class="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+      <div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。</div>
+    </div>
+
+    <div class="shrink-0 bg-base-100 border-t border-base-300 py-4">
+      <input id="newMemoTitleInput" type="text" class="input input-bordered w-full font-mono text-sm mb-2" placeholder="件名(省略可)">
       <textarea id="newMemoInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[76px]" placeholder="今、思ったことを。"></textarea>
       <div id="newMemoAttachments" class="flex flex-wrap gap-1 mt-2"></div>
       <div class="flex justify-between items-center mt-2">
@@ -82,10 +86,6 @@
       </div>
       <div id="locationHint" class="text-[11px] font-mono text-base-content/40 mt-1"></div>
       <div id="listStatusBar" class="text-xs font-mono mt-1 hidden"></div>
-    </div>
-
-    <div id="threadList" class="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-      <div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。</div>
     </div>
   </div>
 
@@ -674,6 +674,10 @@
     return buildThreads().find(t => t.tid === tid);
   }
 
+  function threadTitleText(thread) {
+    return thread.entries[0].title || '';
+  }
+
   // ---------- render: list screen ----------
   // ---------- shared layout: metadata row (time -> address -> right-aligned extras), then full-width body ----------
   function renderMemoBlock(m, { clamp = false, extraRight = '' } = {}) {
@@ -716,15 +720,19 @@
       if (tid !== prevTid) {
         if (tbodyOpen) html += '</tbody>';
         const thread = threadByTid.get(tid);
-        const root = thread ? thread.entries[0] : m;
-        const titleText = root.title || firstLine(root.body).slice(0, 60) || '(無題)';
+        const titleText = thread ? threadTitleText(thread) : '';
         const countBadge = thread && thread.entries.length > 1
-          ? `<span class="badge badge-primary badge-sm font-mono ml-2">${thread.entries.length}件</span>`
+          ? `<span class="badge badge-primary badge-sm font-mono ml-2 flex-shrink-0">${thread.entries.length}件</span>`
           : '';
         html += `
           <thead>
             <tr>
-              <th class="bg-base-200 px-1 py-2 text-xs font-mono font-semibold normal-case text-base-content">${escapeHtml(titleText)}${countBadge}</th>
+              <th class="bg-base-200 px-1 py-2 text-xs font-mono font-semibold normal-case text-base-content">
+                <div class="flex items-center">
+                  <span class="truncate min-w-0">${escapeHtml(titleText)}</span>
+                  ${countBadge}
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>`;
@@ -740,7 +748,7 @@
     }
     if (tbodyOpen) html += '</tbody>';
 
-    container.innerHTML = `<table class="table table-pin-rows w-full">${html}</table>`;
+    container.innerHTML = `<table class="table table-pin-rows table-fixed w-full">${html}</table>`;
 
     container.querySelectorAll('.thread-row').forEach(row => {
       row.addEventListener('click', () => openThread(row.dataset.tid));
@@ -759,7 +767,7 @@
   function renderDetail() {
     const thread = getThread(currentThreadId);
     if (!thread) { showList(); return; }
-    document.getElementById('detailTitle').textContent = `${thread.entries.length}件 / 最初のメモ: ${relativeTime(thread.entries[0].created_at)}`;
+    document.getElementById('detailTitle').textContent = threadTitleText(thread);
     const container = document.getElementById('detailEntries');
     container.innerHTML = thread.entries.map(m => `
       <div class="flex flex-col py-3">
@@ -779,8 +787,12 @@
 
   function setNavDetail() {
     document.getElementById('navStart').innerHTML = `
-      <button id="backBtn" class="btn btn-ghost btn-sm font-mono">← 一覧</button>
-      <span id="detailTitle" class="text-[11px] font-mono text-base-content/40 ml-2"></span>`;
+      <button id="backBtn" class="btn btn-ghost btn-square btn-sm" aria-label="一覧へ戻る">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+      <span id="detailTitle" class="text-sm font-mono font-semibold truncate min-w-0"></span>`;
     document.getElementById('backBtn').addEventListener('click', showList);
   }
 
