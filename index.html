@@ -28,7 +28,7 @@
     --s: 45.93% 0.1134 31.09;    --sc: 96.43% 0.0070 88.64;   /* secondary: stamp red */
     --a: 66.41% 0.0831 77.40;    --ac: 22.22% 0.0175 74.66;   /* accent: aged brass */
     --n: 22.10% 0.0057 106.86;   --nc: 93.74% 0.0099 87.47;   /* neutral: ink */
-    --b1: 93.74% 0.0099 87.47;  --b2: 90.40% 0.0141 88.69;  --b3: 86.75% 0.0172 88.01;  --bc: 22.10% 0.0057 106.86; /* paper base */
+    --b1: 100.00% 0.0000 89.88;  --b2: 95.78% 0.0054 95.10;  --b3: 86.75% 0.0172 88.01;  --bc: 22.10% 0.0057 106.86; /* white base */
     --in: 53.83% 0.0952 257.76;  --inc: 96.43% 0.0070 88.64;
     --su: 52.95% 0.0813 158.60;  --suc: 96.43% 0.0070 88.64;
     --wa: 66.41% 0.0831 77.40;   --wac: 22.22% 0.0175 74.66;
@@ -569,13 +569,19 @@
         : '';
       const extraRight = `${badge}${renderStarBtn(root.id)}`;
       return `
-        <button class="reset-btn thread-row w-full text-left flex flex-col py-4 border-b border-base-300 hover:bg-base-200/60 transition-colors" data-tid="${escapeHtml(t.tid)}">
+        <div class="reset-btn thread-row w-full text-left flex flex-col py-4 border-b border-base-300 hover:bg-base-200/60 transition-colors cursor-pointer" data-tid="${escapeHtml(t.tid)}" role="button" tabindex="0">
           ${renderMemoBlock(root, { clamp: true, extraRight })}
-        </button>`;
+        </div>`;
     }).join('');
 
     container.querySelectorAll('.thread-row').forEach(row => {
       row.addEventListener('click', () => openThread(row.dataset.tid));
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openThread(row.dataset.tid);
+        }
+      });
     });
     wireStarButtons(container, renderThreadList);
   }
