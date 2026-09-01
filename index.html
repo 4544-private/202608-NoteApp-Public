@@ -74,6 +74,12 @@
 
       <!-- ===== list screen ===== -->
   <div id="listScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
+    <div class="shrink-0 flex justify-end items-center gap-2 px-1 py-2 border-b border-base-300">
+      <label class="label cursor-pointer gap-2 py-0">
+        <span class="label-text text-[11px] font-mono text-base-content/50">各スレッド最新のみ</span>
+        <input type="checkbox" id="latestOnlyToggle" class="toggle toggle-sm toggle-primary">
+      </label>
+    </div>
     <div id="threadList" class="flex-1 min-h-0 overflow-y-auto overscroll-contain">
       <div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。</div>
     </div>
@@ -165,6 +171,7 @@
   let memos = [];          // flat parsed memo objects
   let currentLocation = null;
   let currentThreadId = null; // set when detail screen is open
+  let listMode = localStorage.getItem('memoapp_listmode') || 'all'; // 'all' | 'latest'
   let starsState = { sha: null, stars: {} }; // { [memoId]: true }
 
   // ---------- utils ----------
@@ -427,6 +434,7 @@
         const ctx = btn.dataset.context;
         selectedTag[ctx] = (selectedTag[ctx] === btn.dataset.tag) ? null : btn.dataset.tag;
         renderTagPicker(ctx);
+        if (ctx === 'new') saveNewDraft(); else saveReplyDraft();
       });
     });
   }
@@ -437,6 +445,82 @@
     const key = arr[0];
     return `<span class="badge ${tagBadgeClass(key)} badge-xs font-mono">${escapeHtml(TAG_LABELS[key] || key)}</span>`;
   }
+
+  // ---------- draft auto-save (localStorage) — so in-progress text survives an accidental
+  //            reload/close. Attachments aren't saved here (File objects can't survive a reload). ----------
+  function debounce(fn, delay) {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), delay);
+    };
+  }
+
+  function saveNewDraft() {
+    const title = document.getElementById('newMemoTitleInput').value;
+    const body = document.getElementById('newMemoInput').value;
+    const tag = selectedTag.new;
+    if (!title && !body && !tag) {
+      localStorage.removeItem('memoapp_draft_new');
+      return;
+    }
+    localStorage.setItem('memoapp_draft_new', JSON.stringify({ title, body, tag }));
+  }
+
+  function restoreNewDraft() {
+    try {
+      const raw = localStorage.getItem('memoapp_draft_new');
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      document.getElementById('newMemoTitleInput').value = draft.title || '';
+      document.getElementById('newMemoInput').value = draft.body || '';
+      selectedTag.new = draft.tag || null;
+      renderTagPicker('new');
+    } catch (e) { /* corrupt draft: ignore */ }
+  }
+
+  function clearNewDraft() {
+    localStorage.removeItem('memoapp_draft_new');
+  }
+
+  function replyDraftKey(tid) {
+    return `memoapp_draft_reply::${tid}`;
+  }
+
+  function saveReplyDraft() {
+    if (!currentThreadId) return;
+    const body = document.getElementById('replyInput').value;
+    const tag = selectedTag.reply;
+    if (!body && !tag) {
+      localStorage.removeItem(replyDraftKey(currentThreadId));
+      return;
+    }
+    localStorage.setItem(replyDraftKey(currentThreadId), JSON.stringify({ body, tag }));
+  }
+
+  function restoreReplyDraft(tid) {
+    selectedTag.reply = null;
+    try {
+      const raw = localStorage.getItem(replyDraftKey(tid));
+      if (raw) {
+        const draft = JSON.parse(raw);
+        document.getElementById('replyInput').value = draft.body || '';
+        selectedTag.reply = draft.tag || null;
+      } else {
+        document.getElementById('replyInput').value = '';
+      }
+    } catch (e) {
+      document.getElementById('replyInput').value = '';
+    }
+    renderTagPicker('reply');
+  }
+
+  function clearReplyDraft(tid) {
+    localStorage.removeItem(replyDraftKey(tid));
+  }
+
+  const saveNewDraftDebounced = debounce(saveNewDraft, 400);
+  const saveReplyDraftDebounced = debounce(saveReplyDraft, 400);
 
   // ---------- pending (not-yet-uploaded) attachments per compose box ----------
   const pendingFiles = { new: [], reply: [] };
@@ -761,11 +845,16 @@
       container.innerHTML = '<div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。<br>上の欄に書いて「記録する」を押してください。</div>';
       return;
     }
-    // Flat, thread-agnostic chronological order (newest first). A pinned title row (daisyUI
-    // "table with pinned rows") is only emitted when the thread_id changes from the immediately
-    // preceding memo — consecutive memos from the same thread share one pin-row.
-    const sorted = [...memos].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    // Flat, thread-agnostic chronological order (oldest first, newest at the bottom). A pinned
+    // title row (daisyUI "table with pinned rows") is only emitted when the thread_id changes
+    // from the immediately preceding row — consecutive rows from the same thread share one pin-row.
+    // In 'latest' mode, only each thread's most recent entry is shown as a row (so every row gets
+    // its own pin-row, since no two consecutive rows can share a thread_id).
     const threadByTid = new Map(buildThreads().map(t => [t.tid, t]));
+    const rows = listMode === 'latest'
+      ? Array.from(threadByTid.values()).map(t => t.entries[t.entries.length - 1])
+      : [...memos];
+    const sorted = rows.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
     let html = '';
     let prevTid = null;
@@ -869,7 +958,7 @@
     document.getElementById('settingsScreen').style.display = 'none';
     document.getElementById('detailScreen').style.display = 'flex';
     setNavDetail();
-    document.getElementById('replyInput').value = '';
+    restoreReplyDraft(tid);
     renderDetail();
     document.getElementById('detailEntries').scrollTop = document.getElementById('detailEntries').scrollHeight;
   }
@@ -955,6 +1044,7 @@
       renderAttachmentChips('new');
       selectedTag.new = null;
       renderTagPicker('new');
+      clearNewDraft();
       showStatus('listStatusBar', '記録しました', 'ok');
       renderThreadList();
       scrollListToBottom();
@@ -1006,6 +1096,7 @@
       renderAttachmentChips('reply');
       selectedTag.reply = null;
       renderTagPicker('reply');
+      clearReplyDraft(currentThreadId);
       showStatus('detailStatusBar', '記録しました', 'ok');
       renderDetail();
       document.getElementById('detailEntries').scrollTop = document.getElementById('detailEntries').scrollHeight;
@@ -1078,6 +1169,15 @@
     renderTagPicker('new');
     renderTagPicker('reply');
 
+    const latestOnlyToggle = document.getElementById('latestOnlyToggle');
+    latestOnlyToggle.checked = listMode === 'latest';
+    latestOnlyToggle.addEventListener('change', () => {
+      listMode = latestOnlyToggle.checked ? 'latest' : 'all';
+      localStorage.setItem('memoapp_listmode', listMode);
+      renderThreadList();
+      scrollListToBottom();
+    });
+
     document.getElementById('openSettings').addEventListener('click', () => {
       document.getElementById('mainDrawer').checked = false;
       showSettings(false);
@@ -1086,12 +1186,14 @@
     document.getElementById('saveSettings').addEventListener('click', handleSaveSettings);
 
     document.getElementById('newMemoBtn').addEventListener('click', submitNewMemo);
+    document.getElementById('newMemoTitleInput').addEventListener('input', saveNewDraftDebounced);
     document.getElementById('newMemoTitleInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         document.getElementById('newMemoInput').focus();
       }
     });
+    document.getElementById('newMemoInput').addEventListener('input', saveNewDraftDebounced);
     document.getElementById('newMemoInput').addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitNewMemo();
     });
@@ -1104,6 +1206,7 @@
     });
 
     document.getElementById('replyBtn').addEventListener('click', submitReply);
+    document.getElementById('replyInput').addEventListener('input', saveReplyDraftDebounced);
     document.getElementById('replyInput').addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitReply();
     });
@@ -1129,6 +1232,7 @@
       try {
         const res = await createAiIssue();
         document.getElementById('replyInput').value = '';
+        clearReplyDraft(currentThreadId);
         showAiStatus(`依頼を送信しました(Issue #${res.number})`, 'ok', res.html_url);
       } catch (e) {
         showAiStatus(`送信失敗: ${e.message}`, 'err');
@@ -1137,9 +1241,17 @@
       }
     });
 
+    // Safety net: mobile browsers don't reliably fire beforeunload, so save on hide too.
+    const saveAllDraftsNow = () => { saveNewDraft(); saveReplyDraft(); };
+    window.addEventListener('pagehide', saveAllDraftsNow);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveAllDraftsNow();
+    });
+
     if (!config || !config.owner || !config.repo || !config.pat) {
       showSettings(true);
     } else {
+      restoreNewDraft();
       showList();
       requestLocation();
       loadMemos();
