@@ -73,7 +73,7 @@
       </div>
 
       <!-- ===== list screen ===== -->
-  <div id="listScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
+  <div id="listScreen" style="display:none;" class="flex flex-col flex-1 min-h-0 relative">
     <div class="shrink-0 flex justify-end items-center gap-2 px-1 py-2 border-b border-base-300">
       <label class="label cursor-pointer gap-2 py-0">
         <span class="label-text text-[11px] font-mono text-base-content/50">各スレッド最新のみ</span>
@@ -84,42 +84,100 @@
       <div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。</div>
     </div>
 
-    <div class="shrink-0 bg-base-100 border-t border-base-300 py-4">
-      <input id="newMemoTitleInput" type="text" class="input input-bordered w-full font-mono text-sm mb-2" placeholder="件名(省略可)">
-      <textarea id="newMemoInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[76px]" placeholder="今、思ったことを。"></textarea>
-      <div id="newMemoTagPicker" class="flex flex-wrap gap-1 mt-2"></div>
-      <div id="newMemoAttachments" class="flex flex-wrap gap-1 mt-2"></div>
-      <div class="flex justify-between items-center mt-2">
-        <div>
-          <input type="file" id="newMemoFileInput" class="hidden" multiple accept=".pdf,.md,image/*">
-          <button type="button" id="newMemoAttachBtn" class="btn btn-outline btn-sm" aria-label="ファイルを添付">📎</button>
-        </div>
-        <button id="newMemoBtn" class="btn btn-neutral btn-sm">記録する</button>
-      </div>
-      <div id="locationHint" class="text-[11px] font-mono text-base-content/40 mt-1"></div>
-      <div id="listStatusBar" class="text-xs font-mono mt-1 hidden"></div>
-    </div>
+    <button type="button" id="openNewMemoModalBtn" class="btn btn-circle btn-neutral absolute bottom-4 right-4 shadow-lg z-10" aria-label="新しいメモを追加">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+      </svg>
+    </button>
   </div>
+
+  <dialog id="newMemoModal" class="modal">
+    <div class="modal-box max-w-none w-[calc(100vw-2rem)] h-[calc(100vh-2rem)] max-h-none rounded-lg flex flex-col p-4 gap-2">
+      <div class="flex items-center justify-between shrink-0">
+        <h3 class="font-mono text-sm font-semibold">新しいメモ</h3>
+        <form method="dialog"><button class="btn btn-ghost btn-sm btn-circle" aria-label="閉じる">✕</button></form>
+      </div>
+
+      <input id="newMemoTitleInput" type="text" class="input input-bordered w-full font-mono text-sm shrink-0" placeholder="件名(省略可)">
+
+      <textarea id="newMemoInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed flex-1 min-h-0" placeholder="今、思ったことを。"></textarea>
+
+      <div id="newMemoTagPicker" class="flex flex-wrap gap-1 shrink-0"></div>
+
+      <div class="shrink-0">
+        <div class="flex items-center justify-between mb-1">
+          <span class="label-text text-xs font-mono text-base-content/60">添付ファイル</span>
+          <button type="button" id="newMemoAttachBtn" class="btn btn-outline btn-xs">📎 ファイルを選ぶ</button>
+        </div>
+        <input type="file" id="newMemoFileInput" class="hidden" multiple accept=".pdf,.md,image/*">
+        <div id="newMemoAttachments" class="flex flex-wrap gap-1"></div>
+      </div>
+
+      <div class="shrink-0">
+        <div class="flex items-center justify-between mb-1">
+          <span class="label-text text-xs font-mono text-base-content/60">関連スレッド</span>
+          <div class="dropdown dropdown-top dropdown-end">
+            <div tabindex="0" role="button" id="relatedThreadPickerBtn" class="btn btn-outline btn-xs">🔗 選ぶ</div>
+            <div tabindex="0" class="dropdown-content menu bg-base-100 border border-base-300 rounded-box z-30 w-64 max-h-56 overflow-y-auto p-2 shadow-sm">
+              <div id="relatedThreadPickerList" class="flex flex-col gap-1"></div>
+            </div>
+          </div>
+        </div>
+        <div id="newMemoRelatedChips" class="flex flex-wrap gap-1"></div>
+      </div>
+
+      <div id="locationHint" class="text-[11px] font-mono text-base-content/40 shrink-0"></div>
+      <div id="listStatusBar" class="text-xs font-mono shrink-0 hidden"></div>
+
+      <div class="shrink-0">
+        <button id="newMemoBtn" class="btn btn-neutral btn-sm w-full">記録する</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 
   <!-- ===== detail screen ===== -->
-  <div id="detailScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
+  <div id="detailScreen" style="display:none;" class="flex flex-col flex-1 min-h-0 relative">
+    <div id="relatedThreadsBar" class="hidden shrink-0 flex-wrap gap-1 px-1 py-2 border-b border-base-300"></div>
     <div id="detailEntries" class="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-base-300 py-1"></div>
 
-    <div class="shrink-0 bg-base-100 border-t border-base-300 py-3">
-      <textarea id="replyInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[64px]" placeholder="この件について追記する…"></textarea>
-      <div id="replyTagPicker" class="flex flex-wrap gap-1 mt-2"></div>
-      <div id="replyAttachments" class="flex flex-wrap gap-1 mt-2"></div>
-      <div class="flex justify-between items-center mt-2">
-        <div class="flex items-center gap-2">
-          <input type="file" id="replyFileInput" class="hidden" multiple accept=".pdf,.md,image/*">
-          <button type="button" id="replyAttachBtn" class="btn btn-outline btn-sm" aria-label="ファイルを添付">📎</button>
-          <button id="aiRequestBtn" class="btn btn-outline btn-sm font-mono">AIに依頼する</button>
-        </div>
-        <button id="replyBtn" class="btn btn-neutral btn-sm">追記する</button>
-      </div>
-      <div id="detailStatusBar" class="text-xs font-mono mt-1 hidden"></div>
-    </div>
+    <button type="button" id="openReplyModalBtn" class="btn btn-circle btn-neutral absolute bottom-4 right-4 shadow-lg z-10" aria-label="追記する">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+      </svg>
+    </button>
   </div>
+
+  <dialog id="replyModal" class="modal">
+    <div class="modal-box max-w-none w-[calc(100vw-2rem)] h-[calc(100vh-2rem)] max-h-none rounded-lg flex flex-col p-4 gap-2">
+      <div class="flex items-center justify-between shrink-0">
+        <h3 class="font-mono text-sm font-semibold">追記する</h3>
+        <form method="dialog"><button class="btn btn-ghost btn-sm btn-circle" aria-label="閉じる">✕</button></form>
+      </div>
+
+      <textarea id="replyInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed flex-1 min-h-0" placeholder="この件について追記する…"></textarea>
+
+      <div id="replyTagPicker" class="flex flex-wrap gap-1 shrink-0"></div>
+
+      <div class="shrink-0">
+        <div class="flex items-center justify-between mb-1">
+          <span class="label-text text-xs font-mono text-base-content/60">添付ファイル</span>
+          <button type="button" id="replyAttachBtn" class="btn btn-outline btn-xs">📎 ファイルを選ぶ</button>
+        </div>
+        <input type="file" id="replyFileInput" class="hidden" multiple accept=".pdf,.md,image/*">
+        <div id="replyAttachments" class="flex flex-wrap gap-1"></div>
+      </div>
+
+      <div id="replyLocationHint" class="text-[11px] font-mono text-base-content/40 shrink-0"></div>
+      <div id="detailStatusBar" class="text-xs font-mono shrink-0 hidden"></div>
+
+      <div class="flex gap-2 shrink-0">
+        <button id="aiRequestBtn" class="btn btn-outline btn-sm font-mono">AIに依頼する</button>
+        <button id="replyBtn" class="btn btn-neutral btn-sm flex-1">追記する</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 
   <!-- ===== settings screen ===== -->
   <div id="settingsScreen" style="display:none;" class="max-w-md w-full mx-auto pt-10 flex-1 min-h-0 overflow-y-auto">
@@ -290,7 +348,7 @@
   }
   function putCacheEntry(path, sha, memo) {
     const cache = loadCache();
-    cache[path] = { sha, id: memo.id, thread_id: memo.thread_id, parent_id: memo.parent_id, created_at: memo.created_at, location: memo.location, body: memo.body, attachments: memo.attachments || [], title: memo.title || null, tags: memo.tags || [], link_preview: memo.link_preview || null };
+    cache[path] = { sha, id: memo.id, thread_id: memo.thread_id, parent_id: memo.parent_id, created_at: memo.created_at, location: memo.location, body: memo.body, attachments: memo.attachments || [], title: memo.title || null, tags: memo.tags || [], link_preview: memo.link_preview || null, related_threads: memo.related_threads || [] };
     saveCache(cache);
   }
 
@@ -742,6 +800,9 @@
       if (memo.link_preview.description) fm += `  description: ${memo.link_preview.description}\n`;
       if (memo.link_preview.image) fm += `  image: ${memo.link_preview.image}\n`;
     }
+    if (memo.related_threads && memo.related_threads.length) {
+      fm += `related_threads: ${memo.related_threads.join(',')}\n`;
+    }
     fm += `status: unprocessed\n`;
     fm += '---\n\n';
     return fm + memo.body + '\n';
@@ -837,24 +898,33 @@
     }
   }
 
+  function updateLocationHints(text) {
+    const listHint = document.getElementById('locationHint');
+    const replyHint = document.getElementById('replyLocationHint');
+    if (listHint) listHint.textContent = text;
+    if (replyHint) replyHint.textContent = text;
+  }
+
   function requestLocation() {
-    if (!('geolocation' in navigator)) return;
-    navigator.geolocation.getCurrentPosition(
-      async pos => {
-        const lat = pos.coords.latitude.toFixed(4);
-        const lng = pos.coords.longitude.toFixed(4);
-        currentLocation = { lat, lng };
-        const hint = document.getElementById('locationHint');
-        if (hint) hint.textContent = `位置情報を取得済み (${lat}, ${lng})`;
-        const address = await reverseGeocode(lat, lng);
-        if (address) {
-          currentLocation.address = address;
-          if (hint) hint.textContent = `位置情報を取得済み: ${address}`;
-        }
-      },
-      () => { /* silently ignore denial/failure */ },
-      { timeout: 5000 }
-    );
+    return new Promise((resolve) => {
+      if (!('geolocation' in navigator)) { resolve(); return; }
+      navigator.geolocation.getCurrentPosition(
+        async pos => {
+          const lat = pos.coords.latitude.toFixed(4);
+          const lng = pos.coords.longitude.toFixed(4);
+          currentLocation = { lat, lng };
+          updateLocationHints(`位置情報を取得済み (${lat}, ${lng})`);
+          const address = await reverseGeocode(lat, lng);
+          if (address) {
+            currentLocation.address = address;
+            updateLocationHints(`位置情報を取得済み: ${address}`);
+          }
+          resolve();
+        },
+        () => { resolve(); /* silently ignore denial/failure */ },
+        { timeout: 5000 }
+      );
+    });
   }
 
   // ---------- status bars ----------
@@ -895,6 +965,59 @@
     return thread.entries[0].title || '';
   }
 
+  // Like threadTitleText, but falls back to a body preview — used where blank would be confusing
+  // (the related-thread picker, chips, and cross-reference links), unlike the main title display.
+  function threadPickerLabel(thread) {
+    return threadTitleText(thread) || firstLine(thread.entries[0].body).slice(0, 40) || '(無題)';
+  }
+
+  // ---------- related threads (cross-references between threads, set at thread creation) ----------
+  const selectedRelatedThreads = new Set();
+
+  function renderRelatedThreadPicker() {
+    const listEl = document.getElementById('relatedThreadPickerList');
+    const threads = buildThreads();
+    if (threads.length === 0) {
+      listEl.innerHTML = '<div class="text-xs font-mono text-base-content/40 px-1 py-1">関連付けられるスレッドがまだありません</div>';
+      return;
+    }
+    listEl.innerHTML = threads.map(t => {
+      const checked = selectedRelatedThreads.has(t.tid) ? 'checked' : '';
+      return `
+        <label class="label cursor-pointer justify-start gap-2 py-1">
+          <input type="checkbox" class="checkbox checkbox-sm related-thread-checkbox" data-tid="${escapeHtml(t.tid)}" ${checked}>
+          <span class="label-text text-xs font-mono truncate">${escapeHtml(threadPickerLabel(t))}</span>
+        </label>`;
+    }).join('');
+    listEl.querySelectorAll('.related-thread-checkbox').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedRelatedThreads.add(cb.dataset.tid); else selectedRelatedThreads.delete(cb.dataset.tid);
+        renderRelatedChips();
+      });
+    });
+  }
+
+  function renderRelatedChips() {
+    const container = document.getElementById('newMemoRelatedChips');
+    container.innerHTML = Array.from(selectedRelatedThreads).map(tid => {
+      const thread = getThread(tid);
+      const label = thread ? threadPickerLabel(thread) : tid;
+      return `
+        <span class="badge badge-outline gap-1 font-mono text-[10px]">
+          🔗 ${escapeHtml(label)}
+          <button type="button" class="remove-related-thread" data-tid="${escapeHtml(tid)}" aria-label="削除">✕</button>
+        </span>`;
+    }).join('');
+    container.querySelectorAll('.remove-related-thread').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedRelatedThreads.delete(btn.dataset.tid);
+        renderRelatedChips();
+        renderRelatedThreadPicker();
+      });
+    });
+  }
+
+  // ---------- compact summaries shown below the compose buttons (accessories live in the popup) ----------
   // ---------- render: list screen ----------
   // ---------- shared layout: metadata row (time -> address -> right-aligned extras), then full-width body ----------
   function renderLinkPreviewCard(lp) {
@@ -1009,10 +1132,43 @@
   }
 
   // ---------- render: detail screen ----------
+  function renderRelatedThreadsBar(thread) {
+    const bar = document.getElementById('relatedThreadsBar');
+    const allThreads = buildThreads();
+    const forward = (thread.entries[0].related_threads || [])
+      .map(tid => allThreads.find(t => t.tid === tid))
+      .filter(Boolean);
+    const backward = allThreads.filter(t =>
+      t.tid !== thread.tid && (t.entries[0].related_threads || []).includes(thread.tid)
+    );
+    // de-dupe in case something is both forward- and backward-linked
+    const seen = new Set();
+    const combined = [];
+    for (const t of [...forward, ...backward]) {
+      if (!seen.has(t.tid)) { seen.add(t.tid); combined.push(t); }
+    }
+    if (combined.length === 0) {
+      bar.classList.add('hidden');
+      bar.classList.remove('flex');
+      bar.innerHTML = '';
+      return;
+    }
+    bar.classList.remove('hidden');
+    bar.classList.add('flex');
+    bar.innerHTML = combined.map(t => `
+      <button type="button" class="reset-btn related-thread-link badge badge-outline gap-1 font-mono text-[10px] cursor-pointer" data-tid="${escapeHtml(t.tid)}">
+        🔗 ${escapeHtml(threadPickerLabel(t))}
+      </button>`).join('');
+    bar.querySelectorAll('.related-thread-link').forEach(btn => {
+      btn.addEventListener('click', () => openThread(btn.dataset.tid));
+    });
+  }
+
   function renderDetail() {
     const thread = getThread(currentThreadId);
     if (!thread) { showList(); return; }
     document.getElementById('detailTitle').textContent = threadTitleText(thread);
+    renderRelatedThreadsBar(thread);
     const container = document.getElementById('detailEntries');
     container.innerHTML = thread.entries.map(m => `
       <div class="flex flex-col py-3">
@@ -1088,6 +1244,7 @@
         const { meta, body } = parseFrontmatter(text);
         if (meta.attachments) meta.attachments = parseAttachmentsString(meta.attachments);
         if (meta.tags) meta.tags = meta.tags.split(',').map(s => s.trim()).filter(Boolean);
+        if (meta.related_threads) meta.related_threads = meta.related_threads.split(',').map(s => s.trim()).filter(Boolean);
         const entry = { sha: item.sha, ...meta, body };
         cache[item.path] = entry;
         fetchedCount++;
@@ -1113,6 +1270,12 @@
     const files = pendingFiles.new;
     if (!body && files.length === 0) return;
 
+    const btn = document.getElementById('newMemoBtn');
+    btn.disabled = true;
+    document.getElementById('listStatusBar').classList.remove('hidden');
+    showStatus('listStatusBar', '位置情報を取得中…', 'ok');
+    await requestLocation();
+
     const now = new Date();
     const id = makeId(now);
     const memo = {
@@ -1125,10 +1288,8 @@
     };
     if (title) memo.title = title;
     if (selectedTag.new) memo.tags = [selectedTag.new];
+    if (selectedRelatedThreads.size) memo.related_threads = Array.from(selectedRelatedThreads);
 
-    const btn = document.getElementById('newMemoBtn');
-    btn.disabled = true;
-    document.getElementById('listStatusBar').classList.remove('hidden');
     try {
       if (files.length) {
         showStatus('listStatusBar', 'ファイルをアップロード中…', 'ok');
@@ -1152,10 +1313,14 @@
       renderAttachmentChips('new');
       selectedTag.new = null;
       renderTagPicker('new');
+      selectedRelatedThreads.clear();
+      renderRelatedChips();
+      renderRelatedThreadPicker();
       clearNewDraft();
       showStatus('listStatusBar', linkPreviewFailed ? '記録しました(リンクプレビューは取得できませんでした)' : '記録しました', 'ok');
       renderThreadList();
       scrollListToBottom();
+      setTimeout(() => document.getElementById('newMemoModal').close(), 500);
     } catch (e) {
       showStatus('listStatusBar', `記録失敗: ${e.message}`, 'err');
     } finally {
@@ -1175,6 +1340,12 @@
     const thread = getThread(currentThreadId);
     const lastEntry = thread.entries[thread.entries.length - 1];
 
+    const btn = document.getElementById('replyBtn');
+    btn.disabled = true;
+    document.getElementById('detailStatusBar').classList.remove('hidden');
+    showStatus('detailStatusBar', '位置情報を取得中…', 'ok');
+    await requestLocation();
+
     const now = new Date();
     const id = makeId(now);
     const memo = {
@@ -1187,9 +1358,6 @@
     };
     if (selectedTag.reply) memo.tags = [selectedTag.reply];
 
-    const btn = document.getElementById('replyBtn');
-    btn.disabled = true;
-    document.getElementById('detailStatusBar').classList.remove('hidden');
     try {
       if (files.length) {
         showStatus('detailStatusBar', 'ファイルをアップロード中…', 'ok');
@@ -1216,6 +1384,7 @@
       showStatus('detailStatusBar', linkPreviewFailed ? '記録しました(リンクプレビューは取得できませんでした)' : '記録しました', 'ok');
       renderDetail();
       document.getElementById('detailEntries').scrollTop = document.getElementById('detailEntries').scrollHeight;
+      setTimeout(() => document.getElementById('replyModal').close(), 500);
     } catch (e) {
       showStatus('detailStatusBar', `記録失敗: ${e.message}`, 'err');
     } finally {
@@ -1270,7 +1439,6 @@
       config.branch = await getDefaultBranch();
       saveConfig(config);
       showList();
-      requestLocation();
       loadMemos();
     } catch (e) {
       statusEl.textContent = `接続失敗: ${e.message}`;
@@ -1320,6 +1488,15 @@
       handleFileInputChange('new', e.target.files);
       e.target.value = '';
     });
+    document.getElementById('relatedThreadPickerBtn').addEventListener('click', renderRelatedThreadPicker);
+    document.getElementById('openNewMemoModalBtn').addEventListener('click', () => {
+      renderTagPicker('new');
+      renderRelatedThreadPicker();
+      const modal = document.getElementById('newMemoModal');
+      modal.showModal();
+      document.getElementById('newMemoInput').focus();
+    });
+    document.getElementById('newMemoModal').addEventListener('close', saveNewDraft);
 
     document.getElementById('replyBtn').addEventListener('click', submitReply);
     document.getElementById('replyInput').addEventListener('input', saveReplyDraftDebounced);
@@ -1333,13 +1510,15 @@
       handleFileInputChange('reply', e.target.files);
       e.target.value = '';
     });
-    document.getElementById('replyInput').addEventListener('focus', () => {
-      // give the keyboard a moment to open / dvh to settle, then reveal the latest entry
-      setTimeout(() => {
-        const container = document.getElementById('detailEntries');
-        container.scrollTop = container.scrollHeight;
-      }, 150);
+    document.getElementById('openReplyModalBtn').addEventListener('click', () => {
+      renderTagPicker('reply');
+      const modal = document.getElementById('replyModal');
+      modal.showModal();
+      const container = document.getElementById('detailEntries');
+      container.scrollTop = container.scrollHeight;
+      document.getElementById('replyInput').focus();
     });
+    document.getElementById('replyModal').addEventListener('close', saveReplyDraft);
 
     document.getElementById('aiRequestBtn').addEventListener('click', async () => {
       const btn = document.getElementById('aiRequestBtn');
@@ -1369,7 +1548,6 @@
     } else {
       restoreNewDraft();
       showList();
-      requestLocation();
       loadMemos();
     }
   }
