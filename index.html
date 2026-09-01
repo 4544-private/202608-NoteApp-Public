@@ -40,6 +40,11 @@
   }
   ::selection { background: var(--b3); }
   .reset-btn { appearance: none; background: transparent; border: 0; padding: 0; margin: 0; }
+  /* Badge-only color overrides — lighter/more vivid than the theme's info/warning/neutral,
+     which stay unchanged everywhere else (buttons, borders, etc.) */
+  .badge-info { background-color: #BFDBFE; border-color: #BFDBFE; color: #1E40AF; }
+  .badge-warning { background-color: #FEF08A; border-color: #FEF08A; color: #854D0E; }
+  .badge-neutral { background-color: #FECACA; border-color: #FECACA; color: #991B1B; }
   /* dvh shrinks automatically when the on-screen keyboard opens, unlike vh */
   .app-h { height: 100vh; height: 100dvh; }
 </style>
@@ -427,8 +432,9 @@
   }
 
   function renderTagBadge(tags) {
-    if (!tags || !tags.length) return '';
-    const key = tags[0];
+    const arr = Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(s => s.trim()).filter(Boolean) : []);
+    if (!arr.length) return '';
+    const key = arr[0];
     return `<span class="badge ${tagBadgeClass(key)} badge-xs font-mono">${escapeHtml(TAG_LABELS[key] || key)}</span>`;
   }
 
