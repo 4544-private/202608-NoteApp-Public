@@ -70,8 +70,14 @@
       <!-- ===== list screen ===== -->
   <div id="listScreen" style="display:none;" class="flex flex-col flex-1 min-h-0">
     <div class="shrink-0 bg-base-100 border-b border-base-300 py-4">
-      <textarea id="newMemoInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[76px]" placeholder="今、思ったことを。" autofocus></textarea>
-      <div class="flex justify-end mt-2">
+      <input id="newMemoTitleInput" type="text" class="input input-bordered w-full font-mono text-sm mb-2" placeholder="件名(省略可)" autofocus>
+      <textarea id="newMemoInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[76px]" placeholder="今、思ったことを。"></textarea>
+      <div id="newMemoAttachments" class="flex flex-wrap gap-1 mt-2"></div>
+      <div class="flex justify-between items-center mt-2">
+        <div>
+          <input type="file" id="newMemoFileInput" class="hidden" multiple accept=".pdf,.md,image/*">
+          <button type="button" id="newMemoAttachBtn" class="btn btn-outline btn-sm" aria-label="ファイルを添付">📎</button>
+        </div>
         <button id="newMemoBtn" class="btn btn-neutral btn-sm">記録する</button>
       </div>
       <div id="locationHint" class="text-[11px] font-mono text-base-content/40 mt-1"></div>
@@ -89,8 +95,13 @@
 
     <div class="shrink-0 bg-base-100 border-t border-base-300 py-3">
       <textarea id="replyInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[64px]" placeholder="この件について追記する…"></textarea>
+      <div id="replyAttachments" class="flex flex-wrap gap-1 mt-2"></div>
       <div class="flex justify-between items-center mt-2">
-        <button id="aiRequestBtn" class="btn btn-outline btn-sm font-mono">AIに依頼する</button>
+        <div class="flex items-center gap-2">
+          <input type="file" id="replyFileInput" class="hidden" multiple accept=".pdf,.md,image/*">
+          <button type="button" id="replyAttachBtn" class="btn btn-outline btn-sm" aria-label="ファイルを添付">📎</button>
+          <button id="aiRequestBtn" class="btn btn-outline btn-sm font-mono">AIに依頼する</button>
+        </div>
         <button id="replyBtn" class="btn btn-neutral btn-sm">追記する</button>
       </div>
       <div id="detailStatusBar" class="text-xs font-mono mt-1 hidden"></div>
@@ -265,7 +276,7 @@
   }
   function putCacheEntry(path, sha, memo) {
     const cache = loadCache();
-    cache[path] = { sha, id: memo.id, thread_id: memo.thread_id, parent_id: memo.parent_id, created_at: memo.created_at, location: memo.location, body: memo.body };
+    cache[path] = { sha, id: memo.id, thread_id: memo.thread_id, parent_id: memo.parent_id, created_at: memo.created_at, location: memo.location, body: memo.body, attachments: memo.attachments || [], title: memo.title || null };
     saveCache(cache);
   }
 
@@ -318,6 +329,125 @@
         content: utf8ToBase64(content),
         branch: config.branch
       })
+    });
+  }
+
+  // ---------- file attachments (PDF / md / images) ----------
+  const ATTACHMENT_DIR = 'attachments';
+  const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB — the simple Contents API PUT isn't reliable much beyond this
+
+  function sanitizeFilename(name) {
+    return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100) || 'file';
+  }
+
+  function guessMimeType(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const map = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', md: 'text/markdown' };
+    return map[ext] || 'application/octet-stream';
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result; // "data:<mime>;base64,XXXX"
+        resolve(result.slice(result.indexOf(',') + 1));
+      };
+      reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function commitFileBase64(path, base64Content, message) {
+    return ghFetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${path}`, {
+      method: 'PUT',
+      body: JSON.stringify({ message, content: base64Content, branch: config.branch })
+    });
+  }
+
+  // Uploads each file to attachments/<memoId>/<sanitized name> and returns [{name, path}, ...]
+  async function uploadAttachments(memoId, files) {
+    const results = [];
+    for (const file of files) {
+      const base64 = await readFileAsBase64(file);
+      const safeName = sanitizeFilename(file.name);
+      const path = `${ATTACHMENT_DIR}/${memoId}/${safeName}`;
+      await commitFileBase64(path, base64, `attachment: ${safeName}`);
+      results.push({ name: file.name, path });
+    }
+    return results;
+  }
+
+  function parseAttachmentsString(raw) {
+    if (!raw) return [];
+    return raw.split(';;').filter(Boolean).map(pair => {
+      const [name, path] = pair.split('::');
+      return { name: name || path, path };
+    });
+  }
+
+  function encodeAttachmentsString(attachments) {
+    return attachments.map(a => `${a.name}::${a.path}`).join(';;');
+  }
+
+  // ---------- pending (not-yet-uploaded) attachments per compose box ----------
+  const pendingFiles = { new: [], reply: [] };
+
+  function renderAttachmentChips(context) {
+    const container = document.getElementById(context === 'new' ? 'newMemoAttachments' : 'replyAttachments');
+    container.innerHTML = pendingFiles[context].map((f, i) => `
+      <span class="badge badge-outline gap-1 font-mono text-[10px]">
+        ${escapeHtml(f.name)}
+        <button type="button" class="remove-pending-file" data-context="${context}" data-index="${i}" aria-label="削除">✕</button>
+      </span>`).join('');
+    container.querySelectorAll('.remove-pending-file').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pendingFiles[btn.dataset.context].splice(Number(btn.dataset.index), 1);
+        renderAttachmentChips(btn.dataset.context);
+      });
+    });
+  }
+
+  function handleFileInputChange(context, fileList) {
+    const statusEl = context === 'new' ? 'listStatusBar' : 'detailStatusBar';
+    for (const file of Array.from(fileList)) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        showStatus(statusEl, `"${file.name}" は5MBを超えるため添付できません`, 'err');
+        continue;
+      }
+      pendingFiles[context].push(file);
+    }
+    renderAttachmentChips(context);
+  }
+
+  // Fetches an attachment via the authenticated API, then opens it as a blob URL (works for private repos,
+  // unlike a plain raw.githubusercontent.com link). Opens the tab synchronously to dodge popup blockers.
+  async function openAttachment(path, name) {
+    const statusEl = document.getElementById('detailScreen').style.display !== 'none' ? 'detailStatusBar' : 'listStatusBar';
+    const win = window.open('', '_blank');
+    try {
+      const data = await ghFetch(
+        `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${path}?ref=${encodeURIComponent(config.branch)}`
+      );
+      const base64 = data.content.replace(/\n/g, '');
+      const byteChars = atob(base64);
+      const byteArray = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([byteArray], { type: guessMimeType(name) });
+      const url = URL.createObjectURL(blob);
+      if (win) win.location.href = url; else window.open(url, '_blank');
+    } catch (e) {
+      if (win) win.close();
+      showStatus(statusEl, `添付の取得に失敗: ${e.message}`, 'err');
+    }
+  }
+
+  function wireAttachmentChips(container) {
+    container.querySelectorAll('.attachment-chip').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openAttachment(btn.dataset.path, btn.dataset.name);
+      });
     });
   }
 
@@ -460,9 +590,13 @@
     fm += `thread_id: ${memo.thread_id}\n`;
     fm += `parent_id: ${memo.parent_id ?? 'null'}\n`;
     fm += `created_at: ${memo.created_at}\n`;
+    if (memo.title) fm += `title: ${memo.title}\n`;
     if (memo.location) {
       fm += `location:\n  lat: ${memo.location.lat}\n  lng: ${memo.location.lng}\n`;
       if (memo.location.address) fm += `  address: ${memo.location.address}\n`;
+    }
+    if (memo.attachments && memo.attachments.length) {
+      fm += `attachments: ${encodeAttachmentsString(memo.attachments)}\n`;
     }
     fm += `status: unprocessed\n`;
     fm += '---\n\n';
@@ -544,6 +678,12 @@
   // ---------- shared layout: metadata row (time -> address -> right-aligned extras), then full-width body ----------
   function renderMemoBlock(m, { clamp = false, extraRight = '' } = {}) {
     const locText = m.location ? (m.location.address || `${m.location.lat}, ${m.location.lng}`) : '';
+    const attachmentsHtml = (m.attachments && m.attachments.length)
+      ? `<div class="flex flex-wrap gap-1 mt-1">${m.attachments.map(a => {
+          const isImage = /\.(png|jpe?g|gif|webp)$/i.test(a.name);
+          return `<button type="button" class="reset-btn attachment-chip badge badge-outline gap-1 font-mono text-[10px] cursor-pointer" data-path="${escapeHtml(a.path)}" data-name="${escapeHtml(a.name)}">${isImage ? '🖼' : '📄'} ${escapeHtml(a.name)}</button>`;
+        }).join('')}</div>`
+      : '';
     return `
       <div class="flex items-center gap-2 text-[11px] font-mono text-base-content/40 w-full mb-1">
         <span class="flex-shrink-0">${relativeTime(m.created_at)}</span>
@@ -551,7 +691,8 @@
         <span class="flex-1"></span>
         <span class="flex items-center gap-1 flex-shrink-0">${extraRight}</span>
       </div>
-      <p class="text-sm leading-relaxed whitespace-pre-wrap break-words w-full ${clamp ? 'line-clamp-3' : ''}">${escapeHtml(m.body)}</p>`;
+      <p class="text-sm leading-relaxed whitespace-pre-wrap break-words w-full ${clamp ? 'line-clamp-3' : ''}">${escapeHtml(m.body)}</p>
+      ${attachmentsHtml}`;
   }
 
   function renderThreadList() {
@@ -560,19 +701,46 @@
       container.innerHTML = '<div class="text-center py-16 text-sm font-mono text-base-content/40 leading-loose">まだメモがありません。<br>上の欄に書いて「記録する」を押してください。</div>';
       return;
     }
-    const threads = buildThreads();
-    container.innerHTML = threads.map(t => {
-      const root = t.entries[0];
-      const count = t.entries.length;
-      const badge = count > 1
-        ? `<span class="badge badge-primary badge-sm font-mono">${count}件</span>`
-        : '';
-      const extraRight = `${badge}${renderStarBtn(root.id)}`;
-      return `
-        <div class="reset-btn thread-row w-full text-left flex flex-col py-4 border-b border-base-300 hover:bg-base-200/60 transition-colors cursor-pointer" data-tid="${escapeHtml(t.tid)}" role="button" tabindex="0">
-          ${renderMemoBlock(root, { clamp: true, extraRight })}
-        </div>`;
-    }).join('');
+    // Flat, thread-agnostic chronological order (newest first). A pinned title row (daisyUI
+    // "table with pinned rows") is only emitted when the thread_id changes from the immediately
+    // preceding memo — consecutive memos from the same thread share one pin-row.
+    const sorted = [...memos].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const threadByTid = new Map(buildThreads().map(t => [t.tid, t]));
+
+    let html = '';
+    let prevTid = null;
+    let tbodyOpen = false;
+
+    for (const m of sorted) {
+      const tid = m.thread_id || m.id;
+      if (tid !== prevTid) {
+        if (tbodyOpen) html += '</tbody>';
+        const thread = threadByTid.get(tid);
+        const root = thread ? thread.entries[0] : m;
+        const titleText = root.title || firstLine(root.body).slice(0, 60) || '(無題)';
+        const countBadge = thread && thread.entries.length > 1
+          ? `<span class="badge badge-primary badge-sm font-mono ml-2">${thread.entries.length}件</span>`
+          : '';
+        html += `
+          <thead>
+            <tr>
+              <th class="bg-base-200 px-1 py-2 text-xs font-mono font-semibold normal-case text-base-content">${escapeHtml(titleText)}${countBadge}</th>
+            </tr>
+          </thead>
+          <tbody>`;
+        tbodyOpen = true;
+        prevTid = tid;
+      }
+      html += `
+        <tr class="thread-row hover:bg-base-200/60 transition-colors cursor-pointer align-top" data-tid="${escapeHtml(tid)}" role="button" tabindex="0">
+          <td class="px-1 py-3">
+            ${renderMemoBlock(m, { clamp: true, extraRight: renderStarBtn(m.id) })}
+          </td>
+        </tr>`;
+    }
+    if (tbodyOpen) html += '</tbody>';
+
+    container.innerHTML = `<table class="table table-pin-rows w-full">${html}</table>`;
 
     container.querySelectorAll('.thread-row').forEach(row => {
       row.addEventListener('click', () => openThread(row.dataset.tid));
@@ -584,6 +752,7 @@
       });
     });
     wireStarButtons(container, renderThreadList);
+    wireAttachmentChips(container);
   }
 
   // ---------- render: detail screen ----------
@@ -597,6 +766,7 @@
         ${renderMemoBlock(m, { clamp: false, extraRight: renderStarBtn(m.id) })}
       </div>`).join('');
     wireStarButtons(container, renderDetail);
+    wireAttachmentChips(container);
   }
 
   // ---------- navbar-start: swaps between app title and back+thread-info ----------
@@ -658,6 +828,7 @@
         }
         const text = await fetchBlob(item);
         const { meta, body } = parseFrontmatter(text);
+        if (meta.attachments) meta.attachments = parseAttachmentsString(meta.attachments);
         const entry = { sha: item.sha, ...meta, body };
         cache[item.path] = entry;
         fetchedCount++;
@@ -677,7 +848,10 @@
   async function submitNewMemo() {
     const textarea = document.getElementById('newMemoInput');
     const body = textarea.value.trim();
-    if (!body) return;
+    const titleInput = document.getElementById('newMemoTitleInput');
+    const title = titleInput.value.trim();
+    const files = pendingFiles.new;
+    if (!body && files.length === 0) return;
 
     const now = new Date();
     const id = makeId(now);
@@ -687,16 +861,26 @@
       parent_id: null,
       created_at: localISOString(now),
       location: currentLocation,
-      body
+      body: body || '(添付ファイルのみ)'
     };
+    if (title) memo.title = title;
 
     const btn = document.getElementById('newMemoBtn');
     btn.disabled = true;
     document.getElementById('listStatusBar').classList.remove('hidden');
-    showStatus('listStatusBar', '記録中…', 'ok');
     try {
+      if (files.length) {
+        showStatus('listStatusBar', 'ファイルをアップロード中…', 'ok');
+        document.getElementById('listStatusBar').classList.remove('hidden');
+        memo.attachments = await uploadAttachments(id, files);
+      }
+      showStatus('listStatusBar', '記録中…', 'ok');
+      document.getElementById('listStatusBar').classList.remove('hidden');
       await commitOne(memo);
       textarea.value = '';
+      titleInput.value = '';
+      pendingFiles.new = [];
+      renderAttachmentChips('new');
       showStatus('listStatusBar', '記録しました', 'ok');
       renderThreadList();
     } catch (e) {
@@ -712,7 +896,8 @@
     if (!currentThreadId) return;
     const textarea = document.getElementById('replyInput');
     const body = textarea.value.trim();
-    if (!body) return;
+    const files = pendingFiles.reply;
+    if (!body && files.length === 0) return;
 
     const thread = getThread(currentThreadId);
     const lastEntry = thread.entries[thread.entries.length - 1];
@@ -725,16 +910,24 @@
       parent_id: lastEntry.id,
       created_at: localISOString(now),
       location: currentLocation,
-      body
+      body: body || '(添付ファイルのみ)'
     };
 
     const btn = document.getElementById('replyBtn');
     btn.disabled = true;
     document.getElementById('detailStatusBar').classList.remove('hidden');
-    showStatus('detailStatusBar', '記録中…', 'ok');
     try {
+      if (files.length) {
+        showStatus('detailStatusBar', 'ファイルをアップロード中…', 'ok');
+        document.getElementById('detailStatusBar').classList.remove('hidden');
+        memo.attachments = await uploadAttachments(id, files);
+      }
+      showStatus('detailStatusBar', '記録中…', 'ok');
+      document.getElementById('detailStatusBar').classList.remove('hidden');
       await commitOne(memo);
       textarea.value = '';
+      pendingFiles.reply = [];
+      renderAttachmentChips('reply');
       showStatus('detailStatusBar', '記録しました', 'ok');
       renderDetail();
       document.getElementById('detailEntries').scrollTop = document.getElementById('detailEntries').scrollHeight;
@@ -812,13 +1005,33 @@
     document.getElementById('saveSettings').addEventListener('click', handleSaveSettings);
 
     document.getElementById('newMemoBtn').addEventListener('click', submitNewMemo);
+    document.getElementById('newMemoTitleInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('newMemoInput').focus();
+      }
+    });
     document.getElementById('newMemoInput').addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitNewMemo();
+    });
+    document.getElementById('newMemoAttachBtn').addEventListener('click', () => {
+      document.getElementById('newMemoFileInput').click();
+    });
+    document.getElementById('newMemoFileInput').addEventListener('change', (e) => {
+      handleFileInputChange('new', e.target.files);
+      e.target.value = '';
     });
 
     document.getElementById('replyBtn').addEventListener('click', submitReply);
     document.getElementById('replyInput').addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitReply();
+    });
+    document.getElementById('replyAttachBtn').addEventListener('click', () => {
+      document.getElementById('replyFileInput').click();
+    });
+    document.getElementById('replyFileInput').addEventListener('change', (e) => {
+      handleFileInputChange('reply', e.target.files);
+      e.target.value = '';
     });
     document.getElementById('replyInput').addEventListener('focus', () => {
       // give the keyboard a moment to open / dvh to settle, then reveal the latest entry
