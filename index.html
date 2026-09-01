@@ -24,15 +24,15 @@
   /* Custom daisyUI theme: warm paper + ink, evokes a physical notebook/receipt log */
   [data-theme="notebook"] {
     color-scheme: light;
-    --p: #2F5D50;   --pc: #F5F3EE;   /* primary: deep ink-stamp teal */
-    --s: #8C3B2E;   --sc: #F5F3EE;   /* secondary: stamp red */
-    --a: #B08D57;   --ac: #201A12;   /* accent: aged brass */
-    --n: #1B1B18;   --nc: #EDEAE3;   /* neutral: ink */
-    --b1: #EDEAE3;  --b2: #E3DFD5;  --b3: #D8D3C7;  --bc: #1B1B18; /* paper base */
-    --in: #4A6FA5;  --inc: #F5F3EE;
-    --su: #3E7A5A;  --suc: #F5F3EE;
-    --wa: #B08D57;  --wac: #201A12;
-    --er: #8C3B2E;  --erc: #F5F3EE;
+    --p: 44.13% 0.0556 173.19;   --pc: 96.43% 0.0070 88.64;   /* primary: deep ink-stamp teal */
+    --s: 45.93% 0.1134 31.09;    --sc: 96.43% 0.0070 88.64;   /* secondary: stamp red */
+    --a: 66.41% 0.0831 77.40;    --ac: 22.22% 0.0175 74.66;   /* accent: aged brass */
+    --n: 22.10% 0.0057 106.86;   --nc: 93.74% 0.0099 87.47;   /* neutral: ink */
+    --b1: 93.74% 0.0099 87.47;  --b2: 90.40% 0.0141 88.69;  --b3: 86.75% 0.0172 88.01;  --bc: 22.10% 0.0057 106.86; /* paper base */
+    --in: 53.83% 0.0952 257.76;  --inc: 96.43% 0.0070 88.64;
+    --su: 52.95% 0.0813 158.60;  --suc: 96.43% 0.0070 88.64;
+    --wa: 66.41% 0.0831 77.40;   --wac: 22.22% 0.0175 74.66;
+    --er: 45.93% 0.1134 31.09;   --erc: 96.43% 0.0070 88.64;
     --rounded-box: 0.3rem;
     --rounded-btn: 0.25rem;
     --rounded-badge: 0.25rem;
@@ -89,7 +89,8 @@
 
     <div class="shrink-0 bg-base-100 border-t border-base-300 py-3">
       <textarea id="replyInput" class="textarea textarea-bordered w-full font-mono text-sm leading-relaxed min-h-[64px]" placeholder="この件について追記する…"></textarea>
-      <div class="flex justify-end mt-2">
+      <div class="flex justify-between items-center mt-2">
+        <button id="aiRequestBtn" class="btn btn-outline btn-sm font-mono">AIに依頼する</button>
         <button id="replyBtn" class="btn btn-neutral btn-sm">追記する</button>
       </div>
       <div id="detailStatusBar" class="text-xs font-mono mt-1 hidden"></div>
@@ -115,8 +116,9 @@
     <div class="form-control mb-2">
       <label class="label pb-1"><span class="label-text font-mono text-xs text-base-content/60">Personal Access Token</span></label>
       <input id="inputPat" type="password" placeholder="github_pat_xxxxxxxx" autocomplete="off" class="input input-bordered font-mono text-sm">
-      <label class="label pt-1"><span class="label-text-alt text-base-content/40 leading-relaxed">Fine-grained token / 対象リポジトリのみ / Contents: Read and write</span></label>
+      <label class="label pt-1"><span class="label-text-alt text-base-content/40 leading-relaxed">Fine-grained token / 対象リポジトリのみ / Contents: Read and write / Issues: Read and write(AI依頼機能を使う場合)</span></label>
     </div>
+    <p class="text-xs text-base-content/40 leading-relaxed -mt-1 mb-2">「AIに依頼する」はGitHub Issueを作成するだけの機能です。自動連携は行わず、後でClaude CodeやCodexなどを手動で操作して、Open中のIssueを処理する運用を想定しています。</p>
     <div class="flex gap-2 mt-6">
       <button id="saveSettings" class="btn btn-neutral btn-sm">保存して接続</button>
       <button id="cancelSettings" style="display:none;" class="btn btn-ghost btn-sm">キャンセル</button>
@@ -197,6 +199,10 @@
     const div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  function firstLine(text) {
+    return text.replace(/\s+/g, ' ').trim();
   }
 
   // ---------- star button (toggle-able any time, independent of memo file content) ----------
@@ -315,6 +321,48 @@
     });
   }
 
+  // ---------- AI kick (framework only, for now): create a plain GitHub Issue with the thread's
+  //            content and no @-mention. Automatic triggering is on hold; the intended workflow is
+  //            to periodically open Claude Code or Codex yourself and work through the open issues.
+  //            Revisit AI_MENTION-based auto-triggering later if/when that becomes worth it. ----------
+  function buildAiIssueTitle(thread, userText) {
+    const base = userText ? userText.slice(0, 60) : firstLine(thread.entries[0].body).slice(0, 40);
+    return `[${thread.tid}] ${base}`;
+  }
+
+  function buildAiIssueBody(thread, userText) {
+    const entriesText = thread.entries.map(m =>
+      `- [${m.created_at}] (memo id: ${m.id})\n  ${m.body.replace(/\n/g, '\n  ')}`
+    ).join('\n\n');
+    const instruction = userText || 'このメモを確認し、有用そうであれば整理・企画書化・簡単な試作など、適切だと思う形で対応してください。';
+    return `${instruction}\n\n---\n\n以下がメモの内容です(スレッドID: ${thread.tid})。\n\n${entriesText}\n\n(各メモファイルは \`${MEMO_DIR}/\` 配下に \`<memo id>.md\` という名前で保存されています。必要であればリポジトリ内を検索してください。)`;
+  }
+
+  async function createAiIssue() {
+    const thread = getThread(currentThreadId);
+    if (!thread) throw new Error('スレッドが見つかりません');
+    const userText = document.getElementById('replyInput').value.trim();
+    return ghFetch(`https://api.github.com/repos/${config.owner}/${config.repo}/issues`, {
+      method: 'POST',
+      body: JSON.stringify({
+        title: buildAiIssueTitle(thread, userText),
+        body: buildAiIssueBody(thread, userText)
+      })
+    });
+  }
+
+  function showAiStatus(message, kind, linkUrl) {
+    const el = document.getElementById('detailStatusBar');
+    el.classList.remove('hidden');
+    const colorClass = kind === 'err' ? 'text-error' : kind === 'ok' ? 'text-success' : 'text-base-content/50';
+    el.className = `text-xs font-mono mt-1 ${colorClass}`;
+    if (linkUrl) {
+      el.innerHTML = `${escapeHtml(message)} <a href="${escapeHtml(linkUrl)}" target="_blank" rel="noopener" class="link">GitHubで見る →</a>`;
+    } else {
+      el.textContent = message;
+    }
+  }
+
   // ---------- stars.json (single mutable index file; memo files themselves stay write-once) ----------
   function sortObjectKeys(obj) {
     const out = {};
@@ -414,6 +462,7 @@
     fm += `created_at: ${memo.created_at}\n`;
     if (memo.location) {
       fm += `location:\n  lat: ${memo.location.lat}\n  lng: ${memo.location.lng}\n`;
+      if (memo.location.address) fm += `  address: ${memo.location.address}\n`;
     }
     fm += `status: unprocessed\n`;
     fm += '---\n\n';
@@ -421,13 +470,36 @@
   }
 
   // ---------- geolocation (best-effort, silent) ----------
+  function shortenAddress(displayName) {
+    if (!displayName) return null;
+    return displayName.split(',').map(s => s.trim()).slice(0, 3).join(', ');
+  }
+
+  async function reverseGeocode(lat, lng) {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=0`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return shortenAddress(data.display_name);
+    } catch (e) {
+      return null; // best-effort only; fall back to raw coordinates elsewhere
+    }
+  }
+
   function requestLocation() {
     if (!('geolocation' in navigator)) return;
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        currentLocation = { lat: pos.coords.latitude.toFixed(4), lng: pos.coords.longitude.toFixed(4) };
+      async pos => {
+        const lat = pos.coords.latitude.toFixed(4);
+        const lng = pos.coords.longitude.toFixed(4);
+        currentLocation = { lat, lng };
         const hint = document.getElementById('locationHint');
-        if (hint) hint.textContent = `位置情報を取得済み (${currentLocation.lat}, ${currentLocation.lng})`;
+        if (hint) hint.textContent = `位置情報を取得済み (${lat}, ${lng})`;
+        const address = await reverseGeocode(lat, lng);
+        if (address) {
+          currentLocation.address = address;
+          if (hint) hint.textContent = `位置情報を取得済み: ${address}`;
+        }
       },
       () => { /* silently ignore denial/failure */ },
       { timeout: 5000 }
@@ -469,6 +541,19 @@
   }
 
   // ---------- render: list screen ----------
+  // ---------- shared layout: metadata row (time -> address -> right-aligned extras), then full-width body ----------
+  function renderMemoBlock(m, { clamp = false, extraRight = '' } = {}) {
+    const locText = m.location ? (m.location.address || `${m.location.lat}, ${m.location.lng}`) : '';
+    return `
+      <div class="flex items-center gap-2 text-[11px] font-mono text-base-content/40 w-full mb-1">
+        <span class="flex-shrink-0">${relativeTime(m.created_at)}</span>
+        ${locText ? `<span class="truncate min-w-0">${escapeHtml(locText)}</span>` : ''}
+        <span class="flex-1"></span>
+        <span class="flex items-center gap-1 flex-shrink-0">${extraRight}</span>
+      </div>
+      <p class="text-sm leading-relaxed whitespace-pre-wrap break-words w-full ${clamp ? 'line-clamp-3' : ''}">${escapeHtml(m.body)}</p>`;
+  }
+
   function renderThreadList() {
     const container = document.getElementById('threadList');
     if (memos.length === 0) {
@@ -482,16 +567,10 @@
       const badge = count > 1
         ? `<span class="badge badge-primary badge-sm font-mono">${count}件</span>`
         : '';
+      const extraRight = `${badge}${renderStarBtn(root.id)}`;
       return `
-        <button class="reset-btn thread-row w-full text-left flex items-start gap-3 py-4 border-b border-base-300 hover:bg-base-200/60 transition-colors" data-tid="${escapeHtml(t.tid)}">
-          <p class="flex-1 min-w-0 text-sm leading-relaxed line-clamp-3 whitespace-pre-line">${escapeHtml(root.body)}</p>
-          <span class="flex flex-col items-end gap-1 flex-shrink-0 pt-0.5">
-            <span class="flex items-center gap-1">
-              ${renderStarBtn(root.id)}
-              ${badge}
-            </span>
-            <span class="text-[11px] font-mono text-base-content/40">${relativeTime(t.latest)}</span>
-          </span>
+        <button class="reset-btn thread-row w-full text-left flex flex-col py-4 border-b border-base-300 hover:bg-base-200/60 transition-colors" data-tid="${escapeHtml(t.tid)}">
+          ${renderMemoBlock(root, { clamp: true, extraRight })}
         </button>`;
     }).join('');
 
@@ -507,18 +586,10 @@
     if (!thread) { showList(); return; }
     document.getElementById('detailTitle').textContent = `${thread.entries.length}件 / 最初のメモ: ${relativeTime(thread.entries[0].created_at)}`;
     const container = document.getElementById('detailEntries');
-    container.innerHTML = thread.entries.map(m => {
-      const loc = m.location ? `<div class="text-[10px] font-mono text-base-content/40 mt-1">${escapeHtml(m.location.lat)}, ${escapeHtml(m.location.lng)}</div>` : '';
-      return `
-        <div class="flex gap-3 py-3 items-start">
-          <div class="text-[11px] font-mono text-base-content/40 min-w-[44px] pt-0.5">${relativeTime(m.created_at)}</div>
-          <div class="flex-1 min-w-0">
-            <div class="text-sm leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(m.body)}</div>
-            ${loc}
-          </div>
-          <div class="flex-shrink-0">${renderStarBtn(m.id)}</div>
-        </div>`;
-    }).join('');
+    container.innerHTML = thread.entries.map(m => `
+      <div class="flex flex-col py-3">
+        ${renderMemoBlock(m, { clamp: false, extraRight: renderStarBtn(m.id) })}
+      </div>`).join('');
     wireStarButtons(container, renderDetail);
   }
 
@@ -556,7 +627,6 @@
     document.getElementById('replyInput').value = '';
     renderDetail();
     document.getElementById('detailEntries').scrollTop = document.getElementById('detailEntries').scrollHeight;
-    document.getElementById('replyInput').focus();
   }
 
   // ---------- load from GitHub (tree-diff cached) ----------
@@ -750,6 +820,21 @@
         const container = document.getElementById('detailEntries');
         container.scrollTop = container.scrollHeight;
       }, 150);
+    });
+
+    document.getElementById('aiRequestBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('aiRequestBtn');
+      showAiStatus('AIへ依頼を送信中…', 'ok');
+      btn.disabled = true;
+      try {
+        const res = await createAiIssue();
+        document.getElementById('replyInput').value = '';
+        showAiStatus(`依頼を送信しました(Issue #${res.number})`, 'ok', res.html_url);
+      } catch (e) {
+        showAiStatus(`送信失敗: ${e.message}`, 'err');
+      } finally {
+        btn.disabled = false;
+      }
     });
 
     if (!config || !config.owner || !config.repo || !config.pat) {
